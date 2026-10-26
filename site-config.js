@@ -1,6 +1,6 @@
 // Update version when deploying site changes. Set a feature to false to disable it.
 window.SITE_CONFIG = {
-  version: "1.2.0",
+  version: "1.3.0",
   features: {
     updateNotices: true,
     episodeFilters: true,

@@ -73,11 +73,19 @@ async function handle(context) {
     const geminiFile = fileResult.file;
     try {
       const model = env.GEMINI_TRANSCRIBE_MODEL || "gemini-3.5-transcribe";
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ fileData: { fileUri: geminiFile.uri, mimeType: geminiFile.mimeType || mime } }, { text: "Transcribe all spoken words verbatim. Return only the transcript, with readable punctuation and paragraph breaks. Do not summarize." }] }] }) });
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ fileData: { fileUri: geminiFile.uri, mimeType: geminiFile.mimeType || mime } }] }] }) });
       let result = {}; try { result = await response.json(); } catch {}
       if (!response.ok) return json({ error: result.error?.message || `Gemini transcription failed (HTTP ${response.status}).` }, 502);
-      const transcript = (result.candidates?.[0]?.content?.parts || []).map(part => part.text || "").join("\n").trim();
-      if (!transcript) return json({ error: "Gemini returned an empty transcript." }, 502);
+      const candidate = result.candidates?.[0];
+      const transcript = [
+        ...(candidate?.content?.parts || []).map(part => part.text || ""),
+        result.text || result.output_text || ""
+      ].join("\n").trim();
+      if (!transcript) {
+        const reason = candidate?.finishReason || candidate?.finish_reason || result.promptFeedback?.blockReason || result.prompt_feedback?.block_reason;
+        const detail = reason ? ` Gemini response status: ${reason}.` : " Gemini returned no text content.";
+        return json({ error: `Gemini returned an empty transcript.${detail} Check that the audio contains audible speech and is in a supported audio format.` }, 502);
+      }
       return json({ transcript });
     } finally {
       if (geminiFile.name) fetch(`https://generativelanguage.googleapis.com/v1beta/${geminiFile.name}`, { method: "DELETE", headers: { "x-goog-api-key": env.GEMINI_API_KEY } }).catch(() => {});

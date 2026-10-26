@@ -12,7 +12,7 @@ const css=`
 #hp .note{color:var(--mute);font-size:14px;margin:4px 0 14px}
 #hp label{display:block;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin:12px 0 4px}
 #hp input,#hp textarea,#hp select{width:100%;padding:10px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);font:inherit}
-#hp textarea{min-height:100px;resize:vertical}#hp .field-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0 4px}#hp .field-head label{margin:0}#hp .field-head button{padding:6px 10px;border-color:var(--accent);color:var(--accent);font-size:12px;white-space:nowrap}#hp #hptr{min-height:190px;font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+#hp textarea{min-height:100px;resize:vertical}#hp .field-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0 4px}#hp .field-head label{margin:0}#hp .field-head button{padding:6px 10px;border-color:var(--accent);color:var(--accent);font-size:12px;white-space:nowrap}#hp .ai-status{min-height:1.4em;margin:2px 0 8px;color:var(--mute);font-size:13px}#hp .ai-status[data-error="true"]{color:#d45c4c}#hp #hptr{min-height:190px;font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
 #hp input,#hp textarea{-webkit-user-select:text;user-select:text;pointer-events:auto;touch-action:manipulation}
 #hp .pwrow{display:flex;gap:8px}#hp .pwrow input{flex:1}
 #hp .r2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -46,7 +46,7 @@ panel.innerHTML=`<div class="in">
 <div class="r2"><div><label>Date</label><input id="hpdate" type="date"></div><div><label>Rant level</label><select id="hprant"></select></div></div><div id="publishScheduleField"><label for="hpwhen">Publish date and time (leave empty to publish now)</label><input id="hpwhen" type="datetime-local"></div>
 <label>Title</label><input id="hptitle" placeholder="e.g. The Mongols Were NOT Just Raiders">
 <label>Unit</label><select id="hpunit"></select>
-<div class="field-head"><label for="hpdesc">The rant (description)</label><button type="button" id="hpdescribe">Generate with AI</button></div><textarea id="hpdesc" placeholder="A short episode description"></textarea><div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div>
+<div class="field-head"><label for="hpdesc">The rant (description)</label><button type="button" id="hpdescribe">Generate with AI</button></div><div id="hpdescribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpdesc" placeholder="A short episode description"></textarea><div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><div id="hptranscribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div>
 <progress id="hpprog" max="100" value="0" hidden></progress>
 <div class="acts"><button class="go" id="hppub">Publish episode</button><span id="hpmsg"></span></div><div class="schedule-row"><div class="schedule-head"><h3>Scheduled episodes</h3><button type="button" id="hpschedrefresh">Refresh</button></div><div id="hpscheduled" class="note">Unlock to load scheduled episodes.</div></div>
 </div></div>`;
@@ -142,18 +142,25 @@ $("hpstop").onclick=()=>{acc=elapsed();rec.stop()};
 $("hpfile").onchange=e=>{const f=e.target.files[0];if(f)setAudio(f)};
 $("hpschedrefresh").onclick=loadScheduled;
 $("hptranscribe").onclick=async()=>{
-  if(!blob){msg("Record or choose audio first.");return}
-  const btn=$("hptranscribe"),prog=$("hpprog");btn.disabled=true;prog.hidden=false;prog.value=0;
-  try{const upload=await ensureUploaded();msg("Transcribing audio…");const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});$("hptr").value=result.transcript||"";msg("Transcript ready. Review it before publishing.")}
-  catch(e){msg("Transcription failed: "+e.message)}
-  btn.disabled=false;prog.hidden=true;
+  const btn=$("hptranscribe"),prog=$("hpprog"),status=$("hptranscribeStatus");
+  if(!blob){status.textContent="Choose or record an audio file first.";status.dataset.error="true";msg(status.textContent);return}
+  btn.disabled=true;prog.hidden=false;prog.value=0;status.textContent="Preparing audio upload...";delete status.dataset.error;
+  try{const upload=await ensureUploaded();status.textContent="Sending audio to Gemini for transcription...";const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});$("hptr").value=result.transcript||"";status.textContent="Transcript ready. Review it before publishing.";msg(status.textContent)}
+  catch(e){status.textContent="Transcription failed: "+e.message;status.dataset.error="true";msg(status.textContent)}
+  finally{btn.disabled=false;prog.hidden=true}
 };
 $("hpdescribe").onclick=async()=>{
-  const transcript=$("hptr").value.trim();if(!transcript){msg("Generate or paste a transcript first.");return}
-  const btn=$("hpdescribe");btn.disabled=true;
-  try{const result=await api({action:"describe",title:$("hptitle").value,unit:$("hpunit").value,transcript});$("hpdesc").value=result.description||"";msg("Description generated. Review and edit it before publishing.")}
-  catch(e){msg("Description generation failed: "+e.message)}
-  btn.disabled=false;
+  const btn=$("hpdescribe"),status=$("hpdescribeStatus");btn.disabled=true;delete status.dataset.error;
+  try{
+    let transcript=$("hptr").value.trim();
+    if(!transcript&&blob){status.textContent="Transcribing audio first...";const upload=await ensureUploaded();const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});transcript=String(result.transcript||"").trim();$("hptr").value=transcript}
+    if(!transcript)throw new Error("Choose audio or add a transcript first.");
+    status.textContent="Generating description with Gemini...";
+    const result=await api({action:"describe",title:$("hptitle").value,unit:$("hpunit").value,transcript});
+    if(!result.description)throw new Error("Gemini returned no description.");
+    $("hpdesc").value=result.description;status.textContent="Description ready. Review and edit it before publishing.";msg(status.textContent)
+  }catch(e){status.textContent="Description generation failed: "+e.message;status.dataset.error="true";msg(status.textContent)}
+  finally{btn.disabled=false}
 };
 
 $("hppub").onclick=async()=>{
