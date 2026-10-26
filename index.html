@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Agastya Archive</title>
+<script src="site-config.js"></script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='60' cy='60' r='58' fill='%23b84a17'/%3E%3Cpath d='M26 48 60 24 94 48Z' fill='%23f4ecdc'/%3E%3Crect x='34' y='54' width='10' height='36' fill='%23f4ecdc'/%3E%3Crect x='76' y='54' width='10' height='36' fill='%23f4ecdc'/%3E%3Crect x='52' y='54' width='16' height='24' rx='8' fill='%23e0b04a'/%3E%3Crect x='28' y='92' width='64' height='6' fill='%23f4ecdc'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -145,33 +146,40 @@ nav{animation:rise .7s both}
     <p>Expect strong opinions, tangents, and at least one “wait, that’s actually insane.”</p>
   </section>
 
-  <footer>© The Agastya Archive · Not an official College Board product, please don’t sue.</footer>
+  <footer>© The Agastya Archive · Not an official College Board product, please don’t sue. · v<span id="siteVersion"></span></footer>
 </div>
 
 <script>
+const SITE_CONFIG=window.SITE_CONFIG||{},SITE_VERSION=SITE_CONFIG.version||"1.0.0",FEATURES=SITE_CONFIG.features||{};
 let filter="All",eps=[],adminPw=null,err="";
 const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(x==="class")e.className=a[x];else if(x.startsWith("on"))e[x]=a[x];else e.setAttribute(x,a[x])}for(const c of k.flat())if(c!=null)e.append(c);return e};
 const fmt=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
+document.getElementById("siteVersion").textContent=SITE_VERSION;
 const updateBanner=document.getElementById("updateBanner"),updateMessage=document.getElementById("updateMessage");
+if(FEATURES.updateNotices===false)updateBanner.hidden=true;
 document.getElementById("dismissUpdate").onclick=()=>{updateBanner.hidden=true};
-function noticeNewEpisodes(items){
-  if(!items.length)return;
-  const key="aa_last_seen_episode_num",latest=Number(items[0].num);
+function noticeUpdates(items){
+  const messages=[],versionKey="aa_last_seen_site_version",episodeKey="aa_last_seen_episode_num";
   try{
-    const saved=localStorage.getItem(key);
-    if(saved===null){localStorage.setItem(key,String(latest));return}
-    const count=latest-Number(saved);
-    if(count>0){
-      updateMessage.textContent=count===1?"New episode since your last visit: EP "+latest+" — "+items[0].title:count+" new episodes since your last visit. Latest: EP "+latest+" — "+items[0].title;
-      updateBanner.hidden=false;
+    const savedVersion=localStorage.getItem(versionKey),hasVisited=savedVersion!==null||localStorage.getItem(episodeKey)!==null;
+    if(hasVisited&&savedVersion!==SITE_VERSION)messages.push("The website has been updated (v"+SITE_VERSION+").");
+    localStorage.setItem(versionKey,SITE_VERSION);
+    if(items.length){
+      const latest=Number(items[0].num),savedEpisode=localStorage.getItem(episodeKey);
+      if(savedEpisode!==null){
+        const count=latest-Number(savedEpisode);
+        if(count===1)messages.push("New episode since your last visit: EP "+latest+" — "+items[0].title);
+        else if(count>1)messages.push(count+" new episodes since your last visit. Latest: EP "+latest+" — "+items[0].title);
+      }
+      localStorage.setItem(episodeKey,String(Math.max(latest,Number(savedEpisode)||0)));
     }
-    localStorage.setItem(key,String(Math.max(latest,Number(saved)||0)));
+    if(FEATURES.updateNotices!==false&&messages.length){updateMessage.textContent=messages.join(" ");updateBanner.hidden=false}
   }catch(e){}
 }
 async function load(){
   try{const r=await fetch("/api/episodes"),t=await r.text();let d;try{d=JSON.parse(t)}catch(x){}
     if(!r.ok||!d)throw new Error(d&&d.error?d.error:"HTTP "+r.status+(r.ok?", not JSON":""));
-    eps=(d.episodes||[]).sort((a,b)=>b.num-a.num);noticeNewEpisodes(eps);err=""}
+    eps=(d.episodes||[]).sort((a,b)=>b.num-a.num);noticeUpdates(eps);err=""}
   catch(e){err="Couldn\u2019t load episodes: "+e.message+". (Running locally? Use \u201cedgeone pages dev\u201d.)"}
   render();
 }
@@ -185,7 +193,7 @@ function render(){
   const units=["All",...new Set(eps.map(e=>e.unit).filter(Boolean))];
   if(!units.includes(filter))filter="All";
   const chips=document.getElementById("chips");chips.replaceChildren();
-  if(units.length>2)units.forEach(u=>chips.append(h("button",{class:"chip"+(u===filter?" on":""),onclick:()=>{filter=u;render()}},u)));
+  if(FEATURES.episodeFilters!==false&&units.length>2)units.forEach(u=>chips.append(h("button",{class:"chip"+(u===filter?" on":""),onclick:()=>{filter=u;render()}},u)));
   const shown=eps.filter(e=>filter==="All"||e.unit===filter);
   document.getElementById("count").textContent=eps.length?eps.length+(eps.length===1?" episode":" episodes"):"";
   const list=document.getElementById("list");list.replaceChildren();
@@ -196,13 +204,12 @@ function render(){
         e.rant?h("span",{class:"rant"},"Rant level ",...Array.from({length:Math.min(5,Math.max(1,e.rant))},(_,i)=>h("span",{class:"fl",style:"animation-delay:"+(i*.18)+"s"},"\u{1F525}"))):null),
       h("h3",null,e.title),e.desc?h("p",null,e.desc):null,
       h("audio",{controls:"",preload:"none",src:"/api/audio?id="+encodeURIComponent(e.id)}));
-    if(adminPw)c.append(h("button",{class:"del",onclick:()=>del(e)},"Delete"));
+    if(adminPw&&FEATURES.episodeDeletion!==false)c.append(h("button",{class:"del",onclick:()=>del(e)},"Delete"));
     list.append(c);
   });
 }
 load();
 </script>
-<script src="fx.js"></script>
-<script src="host.js"></script>
+<script>if(FEATURES.backgroundMusic!==false){const s=document.createElement("script");s.src="fx.js";document.body.append(s)}if(FEATURES.hostPanel!==false){const s=document.createElement("script");s.src="host.js";document.body.append(s)}</script>
 </body>
 </html>
