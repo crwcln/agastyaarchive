@@ -40,7 +40,7 @@ nav b{color:var(--gold)}
 .ep p{margin:0 0 14px;color:var(--ink);opacity:.88;white-space:pre-wrap}
 .rant{font-size:12px;color:var(--mute);margin-left:auto}
 audio{width:100%;height:42px}
-.custom-player{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;margin-top:10px;padding:11px 13px;background:color-mix(in srgb,var(--bg) 72%,var(--surface));border:1px solid var(--line);border-radius:6px}.custom-player .ep-stream{display:none}.player-toggle{width:44px;height:44px;border:0;border-radius:50%;background:var(--accent);color:var(--btn);font:700 18px 'Space Grotesk',sans-serif;cursor:pointer;transition:transform .18s,background .18s}.player-toggle:hover{transform:scale(1.06);background:var(--gold)}.player-toggle:focus-visible,.player-speed:focus-visible,.player-seek:focus-visible{outline:3px solid var(--gold);outline-offset:3px}.player-main{min-width:0}.player-seek{appearance:none;display:block;width:100%;height:6px;margin:6px 0 12px;border-radius:99px;background:linear-gradient(to right,var(--accent) var(--progress,0%),var(--line) var(--progress,0%));cursor:pointer}.player-seek::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-seek::-moz-range-thumb{width:12px;height:12px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-meta{display:flex;justify-content:space-between;gap:10px;color:var(--mute);font-size:11px;line-height:1.3}.player-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.player-speed{min-width:48px;padding:7px 8px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--ink);font:700 12px 'Space Grotesk',sans-serif;cursor:pointer}.player-speed:hover{border-color:var(--accent);color:var(--accent)}@media(max-width:420px){.custom-player{grid-template-columns:42px minmax(0,1fr) 42px;gap:9px;padding:10px}.player-toggle{width:40px;height:40px}.player-speed{min-width:42px;padding:6px 4px}.player-meta{font-size:10px}}.transcript{margin:0 0 12px;border-top:1px solid var(--line);padding-top:10px}.transcript summary{color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.transcript-text{margin-top:10px;white-space:pre-wrap;color:var(--mute);font-size:14px}.noaudio{font-size:13px;color:var(--mute);font-style:italic}
+.custom-player{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;margin-top:10px;padding:11px 13px;background:color-mix(in srgb,var(--bg) 72%,var(--surface));border:1px solid var(--line);border-radius:6px}.custom-player .ep-stream{display:none}.player-toggle{width:44px;height:44px;border:0;border-radius:50%;background:var(--accent);color:var(--btn);font:700 18px 'Space Grotesk',sans-serif;cursor:pointer;transition:transform .18s,background .18s}.player-toggle:hover{transform:scale(1.06);background:var(--gold)}.player-toggle:focus-visible,.player-speed:focus-visible,.player-seek:focus-visible{outline:3px solid var(--gold);outline-offset:3px}.player-main{min-width:0}.player-seek{appearance:none;display:block;width:100%;height:6px;margin:6px 0 12px;border-radius:99px;background:linear-gradient(to right,var(--accent) var(--progress,0%),var(--line) var(--progress,0%));cursor:pointer}.player-seek::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-seek::-moz-range-thumb{width:12px;height:12px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-meta{display:flex;justify-content:space-between;gap:10px;color:var(--mute);font-size:11px;line-height:1.3}.player-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.player-speed{min-width:48px;padding:7px 8px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--ink);font:700 12px 'Space Grotesk',sans-serif;cursor:pointer}.player-speed:hover{border-color:var(--accent);color:var(--accent)}@media(max-width:420px){.custom-player{grid-template-columns:42px minmax(0,1fr) 42px;gap:9px;padding:10px}.player-toggle{width:40px;height:40px}.player-speed{min-width:42px;padding:6px 4px}.player-meta{font-size:10px}}.transcript{margin:0 0 12px;border-top:1px solid var(--line);padding-top:10px}.transcript summary{color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.transcript-text{max-width:72ch;margin-top:10px;color:var(--mute);font-size:14px;line-height:1.8}.transcript-text p{margin:0 0 1em}.transcript-text p:last-child{margin-bottom:0}.noaudio{font-size:13px;color:var(--mute);font-style:italic}
 .empty{border:2px dashed var(--line);border-radius:6px;padding:36px 20px;text-align:center;color:var(--mute)}
 .about{display:grid;gap:12px}
 .about p{margin:0;color:var(--mute)}
@@ -134,7 +134,7 @@ nav{animation:rise .7s both}
 
 <script>
 const SITE_CONFIG=window.SITE_CONFIG||{},SITE_VERSION=SITE_CONFIG.version||"1.0.0",FEATURES=SITE_CONFIG.features||{};
-let filter="All",eps=[],adminPw=null,err="";
+let filter="All",eps=[],adminPw=null,err="",initialEpisodesLoaded=false,pendingEpisodeRefresh=false,episodeRefreshBusy=false;
 const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(x==="class")e.className=a[x];else if(x.startsWith("on"))e[x]=a[x];else e.setAttribute(x,a[x])}for(const c of k.flat())if(c!=null)e.append(c);return e};
 const fmt=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
 document.getElementById("siteVersion").textContent=SITE_VERSION;
@@ -185,9 +185,29 @@ function noticeUpdates(items){
 async function load(){
   try{const r=await fetch("/api/episodes"),t=await r.text();let d;try{d=JSON.parse(t)}catch(x){}
     if(!r.ok||!d)throw new Error(d&&d.error?d.error:"HTTP "+r.status+(r.ok?", not JSON":""));
-    eps=(d.episodes||[]).sort((a,b)=>b.num-a.num);noticeUpdates(eps);err=""}
+    eps=(d.episodes||[]).sort((a,b)=>b.num-a.num);initialEpisodesLoaded=true;noticeUpdates(eps);err=""}
   catch(e){err="Couldn\u2019t load episodes: "+e.message+". (Running locally? Use \u201cedgeone pages dev\u201d.)"}
   render();
+}
+async function refreshPublishedEpisodes(){
+  if(!initialEpisodesLoaded||episodeRefreshBusy||document.hidden)return;
+  episodeRefreshBusy=true;
+  try{
+    const response=await fetch("/api/episodes?live-check="+Date.now(),{cache:"no-store"}),data=await response.json();
+    if(!response.ok||!Array.isArray(data.episodes))return;
+    const next=data.episodes.sort((a,b)=>b.num-a.num),currentIds=eps.map(e=>e.id).join("|"),nextIds=next.map(e=>e.id).join("|");
+    if(currentIds===nextIds)return;
+    const playing=[...document.querySelectorAll("#list audio")].some(audio=>!audio.paused&&!audio.ended);
+    if(playing){pendingEpisodeRefresh=true;updateMessage.textContent="A new episode is available. The episode list will update when playback ends.";updateBanner.hidden=false;return}
+    eps=next;noticeUpdates(eps);err="";pendingEpisodeRefresh=false;render();
+  }catch(e){}
+  finally{episodeRefreshBusy=false}
+}
+document.addEventListener("ended",()=>{if(pendingEpisodeRefresh){pendingEpisodeRefresh=false;refreshPublishedEpisodes()}},true);
+if(FEATURES.liveEpisodeUpdates!==false){
+  window.setInterval(refreshPublishedEpisodes,60000);
+  window.addEventListener("focus",refreshPublishedEpisodes);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshPublishedEpisodes()});
 }
 window.loadEpisodes=load;window.setAdmin=pw=>{adminPw=pw;render()};
 async function del(e){
@@ -214,6 +234,20 @@ function playerFor(id){
   seek.disabled=true;
   return player;
 }
+function transcriptParagraphs(value){
+  const blocks=String(value||"").replace(/\r/g,"").trim().split(/\n\s*\n+/).map(block=>block.replace(/\s*\n\s*/g," ").trim()).filter(Boolean),paragraphs=[];
+  for(const block of blocks){
+    const sentences=(block.match(/[^.!?]+(?:[.!?]+["')\]]*|$)/g)||[block]).map(text=>text.trim()).filter(Boolean);
+    if(sentences.length<=1&&block.length>560){
+      let rest=block;
+      while(rest.length>560){let cut=rest.lastIndexOf(" ",560);if(cut<280)cut=rest.indexOf(" ",560);if(cut<0)break;paragraphs.push(rest.slice(0,cut).trim());rest=rest.slice(cut).trim()}
+      if(rest)paragraphs.push(rest);
+    }else{
+      for(let i=0;i<sentences.length;i+=3)paragraphs.push(sentences.slice(i,i+3).join(" "));
+    }
+  }
+  return paragraphs;
+}
 function render(){
   const units=["All",...new Set(eps.map(e=>e.unit).filter(Boolean))];
   if(!units.includes(filter))filter="All";
@@ -228,7 +262,7 @@ function render(){
       h("div",{class:"meta"},h("span",{class:"num"},"EP "+e.num),h("span",{class:"eq"},h("i"),h("i"),h("i")),e.unit?h("span",{class:"tag"},e.unit):null,h("span",null,fmt(e.date)),
         e.rant?h("span",{class:"rant"},"Rant level ",...Array.from({length:Math.min(5,Math.max(1,e.rant))},(_,i)=>h("span",{class:"fl",style:"animation-delay:"+(i*.18)+"s"},"\u{1F525}"))):null),
       h("h3",null,e.title),e.desc?h("p",null,e.desc):null,
-      FEATURES.transcript!==false&&e.transcript?h("details",{class:"transcript"},h("summary",null,"Read transcript"),h("div",{class:"transcript-text"},e.transcript)):null,
+      FEATURES.transcript!==false&&e.transcript?h("details",{class:"transcript"},h("summary",null,"Read transcript"),h("div",{class:"transcript-text"},...transcriptParagraphs(e.transcript).map(paragraph=>h("p",null,paragraph)))):null,
       playerFor(e.id));
     if(adminPw&&FEATURES.episodeDeletion!==false)c.append(h("button",{class:"del",onclick:()=>del(e)},"Delete"));
     list.append(c);
