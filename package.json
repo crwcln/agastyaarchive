@@ -1,0 +1,5 @@
+{
+  "name": "agastya-archive",
+  "private": true,
+  "dependencies": { "@edgeone/pages-blob": "latest" }
+}
