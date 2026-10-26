@@ -4,7 +4,7 @@ import { getStore } from "@edgeone/pages-blob";
 
 const CHUNK = 2 * 1024 * 1024;
 
-export async function onRequest({ request }) {
+async function handle({ request }) {
   const id = new URL(request.url).searchParams.get("id") || "";
   const store = getStore({ name: "archive" });
   const idx = await store.get("episodes.json", { type: "json" });
@@ -35,4 +35,9 @@ export async function onRequest({ request }) {
       ...(partial ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}),
     },
   });
+}
+
+export async function onRequest(ctx) {
+  try { return await handle(ctx); }
+  catch (e) { return new Response("Server error: " + (e && e.message || e), { status: 500 }); }
 }

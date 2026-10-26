@@ -152,8 +152,10 @@ let filter="All",eps=[],adminPw=null,err="";
 const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(x==="class")e.className=a[x];else if(x.startsWith("on"))e[x]=a[x];else e.setAttribute(x,a[x])}for(const c of k.flat())if(c!=null)e.append(c);return e};
 const fmt=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
 async function load(){
-  try{const r=await fetch("/api/episodes");if(!r.ok)throw 0;eps=((await r.json()).episodes||[]).sort((a,b)=>b.num-a.num);err=""}
-  catch(e){err="Couldn\u2019t load episodes. (Running locally? Use \u201cedgeone pages dev\u201d so the API works.)"}
+  try{const r=await fetch("/api/episodes"),t=await r.text();let d;try{d=JSON.parse(t)}catch(x){}
+    if(!r.ok||!d)throw new Error(d&&d.error?d.error:"HTTP "+r.status+(r.ok?", not JSON":""));
+    eps=(d.episodes||[]).sort((a,b)=>b.num-a.num);err=""}
+  catch(e){err="Couldn\u2019t load episodes: "+e.message+". (Running locally? Use \u201cedgeone pages dev\u201d.)"}
   render();
 }
 window.loadEpisodes=load;window.setAdmin=pw=>{adminPw=pw;render()};

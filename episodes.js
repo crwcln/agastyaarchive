@@ -8,7 +8,7 @@ const pad = i => String(i).padStart(5, "0");
 const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length === y.length && timingSafeEqual(x, y); };
 
-export async function onRequest(context) {
+async function handle(context) {
   const { request } = context, env = context.env || {};
   const store = getStore({ name: "archive", consistency: "strong" });
   const load = async () => (await store.get("episodes.json", { type: "json" })) || { episodes: [] };
@@ -67,4 +67,9 @@ export async function onRequest(context) {
     return json({ ok: true });
   }
   return json({ error: "Unknown action" }, 400);
+}
+
+export async function onRequest(context) {
+  try { return await handle(context); }
+  catch (e) { return json({ error: "Server error: " + (e && e.message || e) }, 500); }
 }
