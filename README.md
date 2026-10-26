@@ -4,7 +4,7 @@
 
 Edit `site-config.js` in the project root to change the displayed version and enable or disable site features. Bump `version` when publishing a site change so returning visitors see the update banner.
 
-Available feature switches: `updateNotices`, `episodeFilters`, `hostPanel`, `episodeDeletion`, `customAudioPlayer`, `transcript`, `episodeScheduling`, `aiDescription`, `transcribeAudio`, and `backgroundMusic`.
+Available feature switches: `updateNotices`, `episodeFilters`, `hostPanel`, `episodeDeletion`, `customAudioPlayer`, `transcript`, `episodeScheduling`, `aiDescription`, `transcribeAudio`, `backgroundMusic`, and `autoReloadOnUpdate`. Pages check for a version change every minute and when the visitor returns to the tab, then reload once a new version is found. Set `autoReloadOnUpdate` to `false` to disable this.
 
 ## API routes
 

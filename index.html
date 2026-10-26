@@ -141,6 +141,29 @@ document.getElementById("siteVersion").textContent=SITE_VERSION;
 const updateBanner=document.getElementById("updateBanner"),updateMessage=document.getElementById("updateMessage");
 if(FEATURES.updateNotices===false)updateBanner.hidden=true;
 document.getElementById("dismissUpdate").onclick=()=>{updateBanner.hidden=true};
+const autoReloadOnUpdate=FEATURES.autoReloadOnUpdate!==false,autoReloadKey="aa_auto_reload_target_version";
+if(autoReloadOnUpdate){
+  try{if(sessionStorage.getItem(autoReloadKey)===SITE_VERSION)sessionStorage.removeItem(autoReloadKey)}catch(e){}
+  let checkingVersion=false;
+  async function checkForSiteUpdate(){
+    if(checkingVersion||document.hidden)return;
+    checkingVersion=true;
+    try{
+      const response=await fetch("site-config.js?version-check="+Date.now(),{cache:"no-store"});
+      if(!response.ok)return;
+      const source=await response.text(),match=source.match(/\bversion\s*:\s*["']([^"']+)["']/);
+      if(!match||match[1]===SITE_VERSION)return;
+      let attempted="";try{attempted=sessionStorage.getItem(autoReloadKey)||""}catch(e){}
+      if(attempted===match[1])return;
+      try{sessionStorage.setItem(autoReloadKey,match[1])}catch(e){}
+      window.location.reload();
+    }catch(e){}
+    finally{checkingVersion=false}
+  }
+  window.setInterval(checkForSiteUpdate,60000);
+  window.addEventListener("focus",checkForSiteUpdate);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkForSiteUpdate()});
+}
 function noticeUpdates(items){
   const messages=[],versionKey="aa_last_seen_site_version",episodeKey="aa_last_seen_episode_num";
   try{
