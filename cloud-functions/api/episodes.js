@@ -77,13 +77,17 @@ async function handle(context) {
       let result = {}; try { result = await response.json(); } catch {}
       if (!response.ok) return json({ error: result.error?.message || `Gemini transcription failed (HTTP ${response.status}).` }, 502);
       const candidate = result.candidates?.[0];
-      const transcript = [
-        ...(candidate?.content?.parts || []).map(part => part.text || ""),
-        result.text || result.output_text || ""
-      ].join("\n").trim();
+      const transcriptParts = (candidate?.content?.parts || []).map(part => {
+        if (part.text) return part.text;
+        const transcription = part.audioTranscription || part.audio_transcription;
+        if (transcription?.text) return transcription.text;
+        const words = transcription?.words || [];
+        return words.map(item => item.word || "").filter(Boolean).join(" ");
+      }).filter(Boolean);
+      const transcript = [...transcriptParts, result.text || result.output_text || ""].join("\n").trim();
       if (!transcript) {
         const reason = candidate?.finishReason || candidate?.finish_reason || result.promptFeedback?.blockReason || result.prompt_feedback?.block_reason;
-        const detail = reason ? ` Gemini response status: ${reason}.` : " Gemini returned no text content.";
+        const detail = reason && reason !== "STOP" ? ` Gemini response status: ${reason}.` : " Gemini returned neither text nor word-level transcription data.";
         return json({ error: `Gemini returned an empty transcript.${detail} Check that the audio contains audible speech and is in a supported audio format.` }, 502);
       }
       return json({ transcript });
