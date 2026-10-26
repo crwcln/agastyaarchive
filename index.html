@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Agastya Archive</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4ecdc;--surface:#fbf6ea;--ink:#2a1f16;--mute:#6f5e49;--accent:#b84a17;--gold:#9a6f12;--line:#d9c9a8;--btn:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14100d;--surface:#1e1813;--ink:#f1e7d3;--mute:#a8997f;--accent:#e0733a;--gold:#e0b04a;--line:#3a2f25;--btn:#14100d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14100d;--surface:#1e1813;--ink:#f1e7d3;--mute:#a8997f;--accent:#e0733a;--gold:#e0b04a;--line:#3a2f25;--btn:#14100d;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 'Space Grotesk',system-ui,sans-serif;
+background-image:radial-gradient(circle at 15% 0%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 45%)}
+.wrap{max-width:880px;margin:0 auto;padding:0 20px}
+h1,h2,h3{font-family:'Playfair Display',Georgia,serif;line-height:1.1;margin:0}
+nav{display:flex;justify-content:space-between;align-items:center;padding:18px 0;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+nav b{color:var(--gold)}
+.hero{padding:36px 0 28px;position:relative}
+.stamp{display:inline-block;border:2px solid var(--accent);color:var(--accent);padding:4px 12px;font-weight:700;font-size:12px;letter-spacing:.2em;transform:rotate(-2deg);margin-bottom:18px}
+.hero h1{font-size:clamp(44px,12vw,92px);font-weight:900}
+.hero h1 em{color:var(--accent);font-style:italic}
+.hero p{max-width:560px;color:var(--mute);font-size:18px;margin:18px 0 0}
+.rule{height:1px;background:var(--line);margin:30px 0}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin:0 0 18px}
+.chip{flex:none;border:1px solid var(--line);background:transparent;color:var(--mute);padding:6px 14px;border-radius:99px;font:inherit;font-size:13px;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.sec{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+.sec h2{font-size:30px}.sec span{color:var(--mute);font-size:13px}
+.ep{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:20px;margin-bottom:16px;position:relative}
+.ep.latest{border-color:var(--accent);box-shadow:6px 6px 0 color-mix(in srgb,var(--accent) 35%,transparent)}
+.meta{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+.num{color:var(--gold);font-weight:700}
+.tag{border:1px solid var(--line);padding:2px 8px;border-radius:3px}
+.ep h3{font-size:26px;margin-bottom:8px}
+.ep p{margin:0 0 14px;color:var(--ink);opacity:.88;white-space:pre-wrap}
+.rant{font-size:12px;color:var(--mute);margin-left:auto}
+audio{width:100%;height:42px}
+.noaudio{font-size:13px;color:var(--mute);font-style:italic}
+.empty{border:2px dashed var(--line);border-radius:6px;padding:36px 20px;text-align:center;color:var(--mute)}
+.about{display:grid;gap:12px}
+.about p{margin:0;color:var(--mute)}
+footer{padding:36px 0 48px;color:var(--mute);font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><span><b>◆</b> Est. AP World History</span><span>New rants regularly</span></nav>
+
+  <header class="hero">
+    <div class="stamp">CASE FILE · ACADEMICALLY UNHINGED</div>
+    <h1>The Agastya <em>Archive</em></h1>
+    <p>History from AP World, dragged out of the textbook, ranted about, and taken apart piece by piece. Hosted by Agastya.</p>
+  </header>
+
+  <div class="rule"></div>
+
+  
+  <section>
+    <div class="sec"><h2>Episodes</h2><span id="count"></span></div>
+    <div class="chips" id="chips"></div>
+    <div id="list"></div>
+  </section>
+
+  <div class="rule"></div>
+
+  <section class="about">
+    <h2>What is this?</h2>
+    <p>Every episode, Agastya picks a topic from the AP World History year, from empires and trade routes to revolutions and the Cold War, and breaks down what actually happened, what the textbook skipped, and why it still annoys him.</p>
+    <p>Expect strong opinions, tangents, and at least one “wait, that’s actually insane.”</p>
+  </section>
+
+  <footer>© The Agastya Archive · Not an official College Board product, please don’t sue.</footer>
+</div>
+
+<script src="episodes.js"></script>
+<script>
+let filter="All";
+const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(x==="class")e.className=a[x];else if(x.startsWith("on"))e[x]=a[x];else e.setAttribute(x,a[x])}for(const c of k.flat())if(c!=null)e.append(c);return e};
+const fmt=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
+const eps=[...EPISODES].sort((a,b)=>b.num-a.num);
+function render(){
+  const units=["All",...new Set(eps.map(e=>e.unit).filter(Boolean))];
+  const chips=document.getElementById("chips");chips.replaceChildren();
+  if(units.length>2)units.forEach(u=>chips.append(h("button",{class:"chip"+(u===filter?" on":""),onclick:()=>{filter=u;render()}},u)));
+  const shown=eps.filter(e=>filter==="All"||e.unit===filter);
+  document.getElementById("count").textContent=eps.length+(eps.length===1?" episode":" episodes");
+  const list=document.getElementById("list");list.replaceChildren();
+  if(!shown.length){list.append(h("div",{class:"empty"},"The first episode is being researched, ranted about, and edited. Check back soon."));return}
+  shown.forEach((e,i)=>list.append(h("article",{class:"ep"+(i===0&&filter==="All"?" latest":"")},
+    h("div",{class:"meta"},h("span",{class:"num"},"EP "+e.num),e.unit?h("span",{class:"tag"},e.unit):null,h("span",null,fmt(e.date)),
+      e.rant?h("span",{class:"rant"},"Rant level "+"\u{1F525}".repeat(Math.min(5,Math.max(1,e.rant)))):null),
+    h("h3",null,e.title),
+    e.desc?h("p",null,e.desc):null,
+    e.audio?h("audio",{controls:"",preload:"none",src:e.audio}):h("div",{class:"noaudio"},"Audio coming soon."))));
+}
+render();
+</script>
+</body>
+</html>
