@@ -4,7 +4,7 @@
 const CHUNK=2*1024*1024;
 const UNITS=["Unit 1 · Global Tapestry","Unit 2 · Networks of Exchange","Unit 3 · Land-Based Empires","Unit 4 · Transoceanic Interconnections","Unit 5 · Revolutions","Unit 6 · Industrialization","Unit 7 · Global Conflict","Unit 8 · Cold War & Decolonization","Unit 9 · Globalization","Bonus · Off-Syllabus"];
 const css=`
-#hp{position:fixed;left:0;right:0;bottom:0;max-height:90vh;overflow:auto;background:var(--surface);color:var(--ink);border-top:3px solid var(--gold);padding:20px 20px calc(26px + env(safe-area-inset-bottom,0px));transform:translateY(105%);visibility:hidden;transition:transform .25s,visibility 0s .25s;z-index:50;box-shadow:0 -12px 40px rgba(0,0,0,.35)}
+#hp{position:fixed;left:0;right:0;bottom:0;max-height:90vh;overflow:auto;background:var(--surface);color:var(--ink);border-top:3px solid var(--gold);padding:20px 20px calc(26px + env(safe-area-inset-bottom,0px));transform:translateY(105%);visibility:hidden;transition:transform .25s,visibility 0s .25s;z-index:9999;box-shadow:0 -12px 40px rgba(0,0,0,.35)}
 #hp.open{transform:none;visibility:visible;transition:transform .25s}
 #hp .in{max-width:640px;margin:0 auto}
 #hp h2{font-size:26px}
@@ -13,6 +13,8 @@ const css=`
 #hp label{display:block;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin:12px 0 4px}
 #hp input,#hp textarea,#hp select{width:100%;padding:10px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);font:inherit}
 #hp textarea{min-height:100px;resize:vertical}
+#hp input,#hp textarea{-webkit-user-select:text;user-select:text;pointer-events:auto;touch-action:manipulation}
+#hp .pwrow{display:flex;gap:8px}#hp .pwrow input{flex:1}
 #hp .r2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 #hp .rec{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
 #hp .rec b{font:700 22px 'Space Grotesk',sans-serif;min-width:58px}
@@ -33,7 +35,7 @@ document.head.append(Object.assign(document.createElement("style"),{textContent:
 const panel=document.createElement("div");panel.id="hp";
 panel.innerHTML=`<div class="in">
 <div class="top"><h2>Host panel</h2><button id="hpx">Close</button></div>
-<div id="hplock"><p class="note">Host access only.</p><label>Admin password</label><input id="hppw" type="password" autocomplete="current-password">
+<div id="hplock"><p class="note">Host access only.</p><label>Admin password</label><div class="pwrow"><input id="hppw" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"><button type="button" id="hpshow">Show</button></div>
 <div class="acts"><button class="go" id="hpunlock">Unlock</button><span id="hplmsg" class="note"></span></div></div>
 <div id="hpform" hidden>
 <p class="note">Record or pick audio, add the details, and publish. It goes live on the site immediately, no redeploy.</p>
@@ -67,11 +69,12 @@ async function unlock(p){
   try{await api({action:"check"});sessionStorage.setItem("hp_pw",pw);$("hplock").hidden=true;$("hpform").hidden=false;window.setAdmin&&window.setAdmin(pw);return true}
   catch(e){pw="";sessionStorage.removeItem("hp_pw");$("hplmsg").textContent=e.message==="Wrong password"?"Wrong password.":"Couldn’t reach the API: "+e.message;return false}
 }
+$("hpshow").onclick=()=>{const i=$("hppw"),s=i.type==="password";i.type=s?"text":"password";$("hpshow").textContent=s?"Hide":"Show";i.focus()};
 $("hpunlock").onclick=()=>unlock($("hppw").value);
 $("hppw").onkeydown=e=>e.key==="Enter"&&unlock($("hppw").value);
 if(pw)unlock(pw);
 
-const open=v=>panel.classList.toggle("open",v);
+const open=v=>{panel.classList.toggle("open",v);if(v)setTimeout(()=>{const t=$("hplock").hidden?$("hptitle"):$("hppw");t.focus()},300)};
 const live=on=>{$("hpdot").classList.toggle("live",on);$("hpstart").disabled=on;$("hppause").disabled=!on;$("hpstop").disabled=!on;$("hppause").textContent="Pause"};
 function setAudio(b){blob=b;$("hpprev").src=URL.createObjectURL(b);$("hpprev").hidden=false;msg((b.size/1048576).toFixed(1)+" MB ready.")}
 
@@ -81,8 +84,8 @@ $("hpstart").onclick=async()=>{
     const mt=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(m=>MediaRecorder.isTypeSupported(m))||"";
     rec=new MediaRecorder(stream,{...(mt?{mimeType:mt}:{}),audioBitsPerSecond:48000});chunks=[];acc=0;
     rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
-    rec.onstop=()=>{clearInterval(tick);stream.getTracks().forEach(t=>t.stop());setAudio(new Blob(chunks,{type:rec.mimeType||mt}));live(false)};
-    rec.start(1000);t0=Date.now();tick=setInterval(()=>$("hptime").textContent=fmtT(elapsed()),250);live(true);msg("");
+    rec.onstop=()=>{window.AAmusic&&AAmusic.hold("rec",false);clearInterval(tick);stream.getTracks().forEach(t=>t.stop());setAudio(new Blob(chunks,{type:rec.mimeType||mt}));live(false)};
+    rec.start(1000);window.AAmusic&&AAmusic.hold("rec",true);t0=Date.now();tick=setInterval(()=>$("hptime").textContent=fmtT(elapsed()),250);live(true);msg("");
   }catch(e){msg("Mic blocked or unavailable: "+e.message)}
 };
 $("hppause").onclick=()=>{
@@ -117,7 +120,7 @@ $("hppub").onclick=async()=>{
 };
 
 $("hpx").onclick=()=>open(false);
-addEventListener("keydown",e=>e.key==="Escape"&&open(false));
+["keydown","keyup","keypress"].forEach(ev=>panel.addEventListener(ev,e=>{e.stopPropagation();if(ev==="keydown"&&e.key==="Escape")open(false)}));
 const ft=document.querySelector("footer");
 if(ft)ft.append(" · ",Object.assign(document.createElement("a"),{href:"#host",textContent:"Host panel",onclick:e=>{e.preventDefault();open(true)}}));
 if(location.hash==="#host")open(true);
