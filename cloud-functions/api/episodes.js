@@ -1,5 +1,5 @@
 // GET  /api/episodes  -> public episode list
-// POST /api/episodes  -> admin actions (header x-admin-password): check | upload-urls | publish | delete
+// POST /api/episodes  -> admin actions: check | upload-start | publish | delete; PUT uploads an audio part
 import { getStore } from "@edgeone/pages-blob";
 import { timingSafeEqual } from "node:crypto";
 
@@ -14,23 +14,30 @@ async function handle(context) {
   const load = async () => (await store.get("episodes.json", { type: "json" })) || { episodes: [] };
 
   if (request.method === "GET") return json(await load());
-  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  if (request.method !== "POST" && request.method !== "PUT") return json({ error: "Method not allowed" }, 405);
 
   if (!env.ADMIN_PASSWORD || !same(request.headers.get("x-admin-password"), env.ADMIN_PASSWORD)) {
     await new Promise(r => setTimeout(r, 600));
     return json({ error: "Wrong password" }, 401);
   }
+  if (request.method === "PUT") {
+    const url = new URL(request.url), id = url.searchParams.get("id"), partText = url.searchParams.get("part"), part = Math.floor(+partText);
+    if (!/^[a-z0-9]{6,20}$/.test(id || "") || partText === null || !(part >= 0 && part < MAX_CHUNKS)) return json({ error: "Bad upload part" }, 400);
+    const bytes = await request.arrayBuffer();
+    if (bytes.byteLength < 1 || bytes.byteLength > CHUNK) return json({ error: "Bad upload size" }, 400);
+    await store.set(`audio/${id}/${pad(part)}`, bytes);
+    return json({ ok: true });
+  }
+
   let b; try { b = await request.json(); } catch { return json({ error: "Bad JSON" }, 400); }
 
   if (b.action === "check") return json({ ok: true });
 
-  if (b.action === "upload-urls") {
+  if (b.action === "upload-start") {
     const n = Math.floor(+b.parts);
     if (!(n >= 1 && n <= MAX_CHUNKS)) return json({ error: "Bad part count" }, 400);
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const urls = await Promise.all(Array.from({ length: n }, async (_, i) =>
-      (await store.createUploadUrl(`audio/${id}/${pad(i)}`, { expireSeconds: 3600, contentType: "application/octet-stream" })).url));
-    return json({ id, urls });
+    return json({ id });
   }
 
   const idx = await load();

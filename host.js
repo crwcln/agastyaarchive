@@ -1,5 +1,5 @@
 // Host panel: password-protected. Record or pick audio, then publish straight to the live site.
-// Audio is split into 2 MB parts and uploaded directly to EdgeOne Blob storage via pre-signed URLs.
+// Audio is split into 2 MB parts and sent through the same-origin API to EdgeOne Blob storage.
 (()=>{
 const CHUNK=2*1024*1024;
 const UNITS=["Unit 1 · Global Tapestry","Unit 2 · Networks of Exchange","Unit 3 · Land-Based Empires","Unit 4 · Transoceanic Interconnections","Unit 5 · Revolutions","Unit 6 · Industrialization","Unit 7 · Global Conflict","Unit 8 · Cold War & Decolonization","Unit 9 · Globalization","Bonus · Off-Syllabus"];
@@ -60,6 +60,13 @@ let pw=sessionStorage.getItem("hp_pw")||"",stream,rec,chunks=[],blob=null,t0=0,a
 const msg=t=>$("hpmsg").textContent=t;
 const fmtT=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 const elapsed=()=>acc+(rec&&rec.state==="recording"?(Date.now()-t0)/1000:0);
+async function uploadPart(id,index,part){
+  let r;
+  try{r=await fetch("/api/episodes?id="+encodeURIComponent(id)+"&part="+index,{method:"PUT",headers:{"Content-Type":"application/octet-stream","x-admin-password":pw},body:part})}
+  catch(e){throw new Error("Could not send upload part "+(index+1)+" to /api/episodes: "+e.message)}
+  const t=await r.text();let d={};try{d=JSON.parse(t)}catch(e){}
+  if(!r.ok)throw new Error(d.error||"Upload part "+(index+1)+" failed (HTTP "+r.status+")");
+}
 async function api(body){
   const r=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":pw},body:JSON.stringify(body)});
   const t=await r.text();let d={};try{d=JSON.parse(t)}catch(e){}
@@ -106,11 +113,10 @@ $("hppub").onclick=async()=>{
   try{
     const parts=Math.ceil(blob.size/CHUNK);
     msg("Preparing upload…");
-    const {id,urls}=await api({action:"upload-urls",parts});
+    const {id}=await api({action:"upload-start",parts});
     for(let i=0;i<parts;i++){
       msg(`Uploading part ${i+1} of ${parts}…`);
-      const r=await fetch(urls[i],{method:"PUT",headers:{"Content-Type":"application/octet-stream"},body:blob.slice(i*CHUNK,(i+1)*CHUNK)});
-      if(!r.ok)throw new Error("Upload failed on part "+(i+1)+" (HTTP "+r.status+")");
+      await uploadPart(id,i,blob.slice(i*CHUNK,(i+1)*CHUNK));
       prog.value=Math.round((i+1)/parts*100);
     }
     msg("Publishing…");
