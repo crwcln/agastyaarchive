@@ -9,7 +9,7 @@ async function handle({ request }) {
   const store = getStore({ name: "archive" });
   const idx = await store.get("episodes.json", { type: "json" });
   const ep = idx && idx.episodes.find(x => x.id === id);
-  if (!ep) return new Response("Not found", { status: 404 });
+  if (!ep || (ep.publishAt && Date.parse(ep.publishAt) > Date.now())) return new Response("Not found", { status: 404 });
 
   const size = ep.size;
   let start = 0, end = size - 1, ranged = false;

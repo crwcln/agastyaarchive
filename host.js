@@ -12,7 +12,7 @@ const css=`
 #hp .note{color:var(--mute);font-size:14px;margin:4px 0 14px}
 #hp label{display:block;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin:12px 0 4px}
 #hp input,#hp textarea,#hp select{width:100%;padding:10px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);font:inherit}
-#hp textarea{min-height:100px;resize:vertical}
+#hp textarea{min-height:100px;resize:vertical}#hp .field-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0 4px}#hp .field-head label{margin:0}#hp .field-head button{padding:6px 10px;border-color:var(--accent);color:var(--accent);font-size:12px;white-space:nowrap}#hp #hptr{min-height:190px;font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
 #hp input,#hp textarea{-webkit-user-select:text;user-select:text;pointer-events:auto;touch-action:manipulation}
 #hp .pwrow{display:flex;gap:8px}#hp .pwrow input{flex:1}
 #hp .r2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -25,7 +25,7 @@ const css=`
 #hp button:disabled{opacity:.4;cursor:default}
 #hp .go{background:var(--accent);border-color:var(--accent);color:var(--btn)}
 #hp audio{width:100%;margin-top:12px}
-#hp .acts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px}
+#hp .acts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px}#hp .schedule-row{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}#hp .schedule-head{display:flex;justify-content:space-between;align-items:center;gap:10px}#hp .schedule-head h3{font:700 17px 'Space Grotesk',sans-serif}#hp .schedule-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}#hp .schedule-info{min-width:0}#hp .schedule-info b{display:block;overflow-wrap:anywhere}#hp .schedule-info span{display:block;color:var(--mute);font-size:12px}#hp .schedule-item input{grid-column:1/-1}#hp .schedule-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}#hp .schedule-actions button{font-size:12px;padding:6px 9px}
 #hp progress{width:100%;margin-top:12px}
 #hpmsg{font-size:14px;color:var(--mute)}
 .del{position:absolute;top:14px;right:14px;font-size:12px;padding:3px 8px;color:var(--mute)}
@@ -43,20 +43,24 @@ panel.innerHTML=`<div class="in">
 <button id="hpstart">● Record</button><button id="hppause" disabled>Pause</button><button id="hpstop" disabled>Stop</button></div>
 <label>…or choose an existing audio file</label><input type="file" id="hpfile" accept="audio/*">
 <audio id="hpprev" controls hidden></audio>
-<div class="r2"><div><label>Date</label><input id="hpdate" type="date"></div><div><label>Rant level</label><select id="hprant"></select></div></div>
+<div class="r2"><div><label>Date</label><input id="hpdate" type="date"></div><div><label>Rant level</label><select id="hprant"></select></div></div><div id="publishScheduleField"><label for="hpwhen">Publish date and time (leave empty to publish now)</label><input id="hpwhen" type="datetime-local"></div>
 <label>Title</label><input id="hptitle" placeholder="e.g. The Mongols Were NOT Just Raiders">
 <label>Unit</label><select id="hpunit"></select>
-<label>The rant (description)</label><textarea id="hpdesc"></textarea>
+<div class="field-head"><label for="hpdesc">The rant (description)</label><button type="button" id="hpdescribe">Generate with AI</button></div><textarea id="hpdesc" placeholder="A short episode description"></textarea><div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div>
 <progress id="hpprog" max="100" value="0" hidden></progress>
-<div class="acts"><button class="go" id="hppub">Publish episode</button><span id="hpmsg"></span></div>
+<div class="acts"><button class="go" id="hppub">Publish episode</button><span id="hpmsg"></span></div><div class="schedule-row"><div class="schedule-head"><h3>Scheduled episodes</h3><button type="button" id="hpschedrefresh">Refresh</button></div><div id="hpscheduled" class="note">Unlock to load scheduled episodes.</div></div>
 </div></div>`;
 document.body.append(panel);
-const $=id=>panel.querySelector("#"+id);
+const $=id=>panel.querySelector("#"+id),FEATURES=(window.SITE_CONFIG&&window.SITE_CONFIG.features)||{};
+if(FEATURES.aiDescription!==true)$("hpdescribe").hidden=true;
+if(FEATURES.transcribeAudio!==true)$("hptranscribe").hidden=true;
+if(FEATURES.transcript===false)$("transcriptField").hidden=true;
+if(FEATURES.episodeScheduling===false){$("hpscheduled").parentElement.hidden=true;$("publishScheduleField").hidden=true}
 UNITS.forEach(u=>$("hpunit").append(new Option(u,u)));
 [1,2,3,4,5].forEach(n=>$("hprant").append(new Option("\u{1F525}".repeat(n),n,false,n===4)));
 $("hpdate").value=new Date().toISOString().slice(0,10);
 
-let pw=sessionStorage.getItem("hp_pw")||"",stream,rec,chunks=[],blob=null,t0=0,acc=0,tick=null;
+let pw=sessionStorage.getItem("hp_pw")||"",stream,rec,chunks=[],blob=null,uploadId=null,uploadedBlob=null,uploadedParts=0,t0=0,acc=0,tick=null;
 const msg=t=>$("hpmsg").textContent=t;
 const fmtT=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 const elapsed=()=>acc+(rec&&rec.state==="recording"?(Date.now()-t0)/1000:0);
@@ -74,9 +78,41 @@ async function api(body){
   if(!Object.keys(d).length)throw new Error("API returned something that isn’t JSON (functions probably aren’t deployed).");
   return d;
 }
+async function ensureUploaded(){
+  if(uploadId&&uploadedBlob===blob)return {id:uploadId,parts:uploadedParts};
+  const parts=Math.ceil(blob.size/CHUNK),started=await api({action:"upload-start",parts});
+  for(let i=0;i<parts;i++){
+    msg("Uploading audio part "+(i+1)+" of "+parts+"…");
+    await uploadPart(started.id,i,blob.slice(i*CHUNK,(i+1)*CHUNK));
+    $("hpprog").value=Math.round((i+1)/parts*100);
+  }
+  uploadId=started.id;uploadedBlob=blob;uploadedParts=parts;
+  return {id:uploadId,parts:uploadedParts};
+}
+function localDateTime(iso){const d=new Date(iso),local=new Date(d.getTime()-d.getTimezoneOffset()*60000);return local.toISOString().slice(0,16)}
+async function loadScheduled(){
+  const box=$("hpscheduled");if(!box||!pw)return;
+  box.textContent="Loading…";
+  try{
+    const {episodes}=await api({action:"list-scheduled"});box.replaceChildren();
+    if(!episodes.length){box.textContent="No episodes scheduled.";return}
+    for(const episode of episodes){
+      const row=document.createElement("div");row.className="schedule-item";
+      const info=document.createElement("div");info.className="schedule-info";
+      const title=document.createElement("b");title.textContent="EP "+episode.num+" · "+episode.title;
+      const date=document.createElement("span");date.textContent="Scheduled for "+new Date(episode.publishAt).toLocaleString();info.append(title,date);
+      const input=document.createElement("input");input.type="datetime-local";input.value=localDateTime(episode.publishAt);input.setAttribute("aria-label","Reschedule "+episode.title);
+      const actions=document.createElement("div");actions.className="schedule-actions";
+      const save=document.createElement("button");save.type="button";save.textContent="Save time";save.onclick=async()=>{if(!input.value){msg("Choose a schedule time.");return}save.disabled=true;try{await api({action:"set-schedule",id:episode.id,publishAt:new Date(input.value).toISOString()});msg("Schedule updated.");await loadScheduled()}catch(e){msg("Could not update schedule: "+e.message);save.disabled=false}};
+      const now=document.createElement("button");now.type="button";now.textContent="Publish now";now.onclick=async()=>{if(!confirm("Publish “"+episode.title+"” now?"))return;now.disabled=true;try{await api({action:"publish-now",id:episode.id});msg("Episode published.");await loadScheduled();window.loadEpisodes&&window.loadEpisodes()}catch(e){msg("Could not publish episode: "+e.message);now.disabled=false}};
+      const remove=document.createElement("button");remove.type="button";remove.textContent="Delete";remove.onclick=async()=>{if(!confirm("Delete scheduled episode “"+episode.title+"”?"))return;remove.disabled=true;try{await api({action:"delete",id:episode.id});msg("Scheduled episode deleted.");await loadScheduled()}catch(e){msg("Could not delete episode: "+e.message);remove.disabled=false}};
+      actions.append(save,now,remove);row.append(info,input,actions);box.append(row);
+    }
+  }catch(e){box.textContent="Could not load scheduled episodes: "+e.message}
+}
 async function unlock(p){
   pw=p;
-  try{await api({action:"check"});sessionStorage.setItem("hp_pw",pw);$("hplock").hidden=true;$("hpform").hidden=false;window.setAdmin&&window.setAdmin(pw);return true}
+  try{await api({action:"check"});sessionStorage.setItem("hp_pw",pw);$("hplock").hidden=true;$("hpform").hidden=false;window.setAdmin&&window.setAdmin(pw);loadScheduled();return true}
   catch(e){pw="";sessionStorage.removeItem("hp_pw");$("hplmsg").textContent=e.message==="Wrong password"?"Wrong password.":"Couldn’t reach the API: "+e.message;return false}
 }
 $("hpshow").onclick=()=>{const i=$("hppw"),s=i.type==="password";i.type=s?"text":"password";$("hpshow").textContent=s?"Hide":"Show";i.focus()};
@@ -86,7 +122,7 @@ if(pw)unlock(pw);
 
 const open=v=>{panel.classList.toggle("open",v);if(v)setTimeout(()=>{const t=$("hplock").hidden?$("hptitle"):$("hppw");t.focus()},300)};
 const live=on=>{$("hpdot").classList.toggle("live",on);$("hpstart").disabled=on;$("hppause").disabled=!on;$("hpstop").disabled=!on;$("hppause").textContent="Pause"};
-function setAudio(b){blob=b;$("hpprev").src=URL.createObjectURL(b);$("hpprev").hidden=false;msg((b.size/1048576).toFixed(1)+" MB ready.")}
+function setAudio(b){if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);$("hpprev").hidden=false;msg((b.size/1048576).toFixed(1)+" MB ready.")}
 
 $("hpstart").onclick=async()=>{
   try{
@@ -104,26 +140,37 @@ $("hppause").onclick=()=>{
 };
 $("hpstop").onclick=()=>{acc=elapsed();rec.stop()};
 $("hpfile").onchange=e=>{const f=e.target.files[0];if(f)setAudio(f)};
+$("hpschedrefresh").onclick=loadScheduled;
+$("hptranscribe").onclick=async()=>{
+  if(!blob){msg("Record or choose audio first.");return}
+  const btn=$("hptranscribe"),prog=$("hpprog");btn.disabled=true;prog.hidden=false;prog.value=0;
+  try{const upload=await ensureUploaded();msg("Transcribing audio…");const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});$("hptr").value=result.transcript||"";msg("Transcript ready. Review it before publishing.")}
+  catch(e){msg("Transcription failed: "+e.message)}
+  btn.disabled=false;prog.hidden=true;
+};
+$("hpdescribe").onclick=async()=>{
+  const transcript=$("hptr").value.trim();if(!transcript){msg("Generate or paste a transcript first.");return}
+  const btn=$("hpdescribe");btn.disabled=true;
+  try{const result=await api({action:"describe",title:$("hptitle").value,unit:$("hpunit").value,transcript});$("hpdesc").value=result.description||"";msg("Description generated. Review and edit it before publishing.")}
+  catch(e){msg("Description generation failed: "+e.message)}
+  btn.disabled=false;
+};
 
 $("hppub").onclick=async()=>{
   const title=$("hptitle").value.trim();
   if(!blob){msg("Record or choose audio first.");return}
   if(!title){msg("Add a title first.");return}
+  if($("hpwhen").value&&new Date($("hpwhen").value).getTime()<=Date.now()){msg("Choose a future publish time, or leave it blank to publish now.");return}
   const btn=$("hppub"),prog=$("hpprog");btn.disabled=true;prog.hidden=false;prog.value=0;
   try{
-    const parts=Math.ceil(blob.size/CHUNK);
-    msg("Preparing upload…");
-    const {id}=await api({action:"upload-start",parts});
-    for(let i=0;i<parts;i++){
-      msg(`Uploading part ${i+1} of ${parts}…`);
-      await uploadPart(id,i,blob.slice(i*CHUNK,(i+1)*CHUNK));
-      prog.value=Math.round((i+1)/parts*100);
-    }
+msg("Preparing upload…");
+    const {id,parts}=await ensureUploaded();
     msg("Publishing…");
-    const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,rant:+$("hprant").value,desc:$("hpdesc").value,size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
-    msg("Live! Episode "+res.episode.num+" is published.");
-    blob=null;$("hpprev").hidden=true;$("hpprev").removeAttribute("src");$("hptime").textContent="0:00";["hptitle","hpdesc","hpfile"].forEach(k=>$(k).value="");
-    window.loadEpisodes&&window.loadEpisodes();
+    const publishAt=$("hpwhen").value?new Date($("hpwhen").value).toISOString():null;
+    const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,publishAt,rant:+$("hprant").value,desc:$("hpdesc").value,transcript:$("hptr").value,size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
+    if(res.episode.publishAt)msg("Episode "+res.episode.num+" scheduled for "+new Date(res.episode.publishAt).toLocaleString());else msg("Live! Episode "+res.episode.num+" is published.");
+    blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").hidden=true;$("hpprev").removeAttribute("src");$("hptime").textContent="0:00";["hptitle","hpdesc","hptr","hpfile","hpwhen"].forEach(k=>$(k).value="");
+    window.loadEpisodes&&window.loadEpisodes();loadScheduled();
   }catch(e){msg("Failed: "+e.message)}
   btn.disabled=false;prog.hidden=true;
 };

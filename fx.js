@@ -4,8 +4,6 @@ const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches,root=documen
 
 /* ---------- background ---------- */
 const bg=document.createElement("div");bg.className="bg";bg.innerHTML='<div class="blob b1"></div><div class="blob b2"></div>';
-if(!reduce)for(let i=0;i<14;i++){const n=document.createElement("span");n.className="n";n.textContent="♪♫♩♬"[i%4];
-  n.style.cssText=`left:${Math.random()*96}%;font-size:${14+Math.random()*22}px;animation-duration:${16+Math.random()*18}s;animation-delay:-${Math.random()*30}s`;bg.append(n)}
 document.body.prepend(bg);
 
 /* ---------- scroll reveal ---------- */
@@ -71,32 +69,22 @@ const music=(()=>{
   }
   return{
     get on(){return on},
-    start(){if(!ctx)build();ctx.resume();on=true;if(!timer){nextT=ctx.currentTime+.1;n=0;timer=setInterval(tick,50)}sync();ui()},
-    stop(){on=false;sync();ui();setTimeout(()=>{if(!on&&timer){clearInterval(timer);timer=null}},900)},
+    start(){if(!ctx)build();ctx.resume();on=true;if(!timer){nextT=ctx.currentTime+.1;n=0;timer=setInterval(tick,50)}sync()},
+    stop(){on=false;sync();setTimeout(()=>{if(!on&&timer){clearInterval(timer);timer=null}},900)},
     hold(k,v){v?holds.add(k):holds.delete(k);sync()},
     suspend(v){if(ctx&&on)v?ctx.suspend():ctx.resume()}
   };
 })();
 window.AAmusic=music;
 
-/* ---------- button ---------- */
-const btn=document.createElement("button");btn.className="mus";btn.type="button";
-btn.innerHTML='<span class="bars"><i></i><i></i><i></i><i></i></span><span class="lbl">Jazz off</span>';
-document.body.append(btn);
-function ui(){btn.classList.toggle("on",music.on);btn.setAttribute("aria-pressed",music.on);btn.querySelector(".lbl").textContent=music.on?"Jazz on":"Jazz off"}
-const pref=k=>{try{return localStorage.getItem("aa_music")}catch(e){return null}};
-const save=v=>{try{localStorage.setItem("aa_music",v)}catch(e){}};
-btn.onclick=()=>{if(music.on){music.stop();save("off")}else{music.start();save("on")}};
-// Browsers block audio until a gesture, so music starts on the first tap/key (unless you turned it off).
-const first=e=>{
-  if(e.target.closest&&e.target.closest(".mus"))return;
+// Browsers require a user gesture before starting audio, so begin on the first tap or keypress.
+const first=()=>{
   const p=document.getElementById("hp");if(p&&p.classList.contains("open"))return;
   ["pointerdown","keydown","touchstart"].forEach(v=>removeEventListener(v,first));
-  if(pref()!=="off"&&!music.on)music.start();
+  if(!music.on)music.start();
 };
 ["pointerdown","keydown","touchstart"].forEach(v=>addEventListener(v,first,{passive:true}));
 document.addEventListener("visibilitychange",()=>music.suspend(document.hidden));
-
 /* ---------- episode playback state (duck jazz while an episode plays) ---------- */
 const mark=(e,on)=>{const c=e.target.closest&&e.target.closest(".ep");if(c)c.classList.toggle("playing",on)};
 const anyPlaying=()=>[...document.querySelectorAll("audio")].some(a=>!a.paused);
@@ -108,5 +96,4 @@ document.addEventListener("play",e=>{
 ["pause","ended"].forEach(ev=>document.addEventListener(ev,e=>{
   if(e.target.tagName!=="AUDIO")return;mark(e,false);if(!anyPlaying())music.hold("audio",false);
 },true));
-ui();
 })();

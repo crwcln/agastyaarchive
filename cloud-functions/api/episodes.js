@@ -13,7 +13,10 @@ async function handle(context) {
   const store = getStore({ name: "archive", consistency: "strong" });
   const load = async () => (await store.get("episodes.json", { type: "json" })) || { episodes: [] };
 
-  if (request.method === "GET") return json(await load());
+  if (request.method === "GET") {
+    const idx = await load(), now = Date.now();
+    return json({ episodes: idx.episodes.filter(e => !e.publishAt || Date.parse(e.publishAt) <= now) });
+  }
   if (request.method !== "POST" && request.method !== "PUT") return json({ error: "Method not allowed" }, 405);
 
   if (!env.ADMIN_PASSWORD || !same(request.headers.get("x-admin-password"), env.ADMIN_PASSWORD)) {
@@ -40,7 +43,77 @@ async function handle(context) {
     return json({ id });
   }
 
+  if (b.action === "discard-upload") {
+    const id = String(b.id || "");
+    if (!/^[a-z0-9]{6,20}$/.test(id)) return json({ error: "Bad upload id" }, 400);
+    const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" });
+    for (const item of blobs) await store.delete(item.key);
+    return json({ ok: true });
+  }
+
+  if (b.action === "transcribe") {
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const id = String(b.id || ""), parts = Math.floor(+b.parts), size = Math.floor(+b.size), maxTranscribeBytes = 80 * 1024 * 1024;
+    if (!/^[a-z0-9]{6,20}$/.test(id) || !(parts >= 1 && parts <= MAX_CHUNKS) || !(size > 0 && size <= maxTranscribeBytes)) return json({ error: "Audio must be between 1 byte and 80 MB to transcribe." }, 400);
+    const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" });
+    if (blobs.length !== parts) return json({ error: `Expected ${parts} audio parts, found ${blobs.length}` }, 400);
+    const audioParts = await Promise.all(Array.from({ length: parts }, (_, i) => store.get(`audio/${id}/${pad(i)}`, { type: "arrayBuffer", consistency: "strong" })));
+    if (audioParts.some(part => !part)) return json({ error: "An audio part is missing. Upload the audio again." }, 400);
+    const actualSize = audioParts.reduce((total, part) => total + part.byteLength, 0);
+    if (actualSize !== size) return json({ error: "Uploaded audio size does not match." }, 400);
+    const mime = String(b.type || "audio/webm").split(";")[0];
+    const start = await fetch("https://generativelanguage.googleapis.com/upload/v1beta/files", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "X-Goog-Upload-Protocol": "resumable", "X-Goog-Upload-Command": "start", "X-Goog-Upload-Header-Content-Length": String(size), "X-Goog-Upload-Header-Content-Type": mime, "Content-Type": "application/json" }, body: JSON.stringify({ file: { display_name: "Agastya Archive episode transcription" } }) });
+    if (!start.ok) return json({ error: `Gemini file upload setup failed (HTTP ${start.status}).` }, 502);
+    const uploadUrl = start.headers.get("x-goog-upload-url");
+    if (!uploadUrl) return json({ error: "Gemini did not return an upload URL." }, 502);
+    const audioBlob = new Blob(audioParts, { type: mime });
+    const uploaded = await fetch(uploadUrl, { method: "POST", headers: { "X-Goog-Upload-Offset": "0", "X-Goog-Upload-Command": "upload, finalize" }, body: audioBlob });
+    let fileResult = {}; try { fileResult = await uploaded.json(); } catch {}
+    if (!uploaded.ok || !fileResult.file?.uri) return json({ error: fileResult.error?.message || `Gemini file upload failed (HTTP ${uploaded.status}).` }, 502);
+    const geminiFile = fileResult.file;
+    try {
+      const model = env.GEMINI_TRANSCRIBE_MODEL || "gemini-3.5-transcribe";
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ fileData: { fileUri: geminiFile.uri, mimeType: geminiFile.mimeType || mime } }, { text: "Transcribe all spoken words verbatim. Return only the transcript, with readable punctuation and paragraph breaks. Do not summarize." }] }] }) });
+      let result = {}; try { result = await response.json(); } catch {}
+      if (!response.ok) return json({ error: result.error?.message || `Gemini transcription failed (HTTP ${response.status}).` }, 502);
+      const transcript = (result.candidates?.[0]?.content?.parts || []).map(part => part.text || "").join("\n").trim();
+      if (!transcript) return json({ error: "Gemini returned an empty transcript." }, 502);
+      return json({ transcript });
+    } finally {
+      if (geminiFile.name) fetch(`https://generativelanguage.googleapis.com/v1beta/${geminiFile.name}`, { method: "DELETE", headers: { "x-goog-api-key": env.GEMINI_API_KEY } }).catch(() => {});
+    }
+  }
+
+  if (b.action === "describe") {
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const transcript = String(b.transcript || "").trim();
+    if (!transcript) return json({ error: "Add a transcript first." }, 400);
+    if (transcript.length > 100000) return json({ error: "Transcript is too long to generate a description." }, 400);
+    const input = `Write a lively, accurate 2–3 sentence episode description for The Agastya Archive, an AP World History podcast. Use the episode title and unit for context. Base claims only on the transcript. Do not invent topics or conclusions. Return only the description.\n\nTitle: ${String(b.title || "").slice(0, 200)}\nUnit: ${String(b.unit || "").slice(0, 100)}\nTranscript:\n${transcript}`;
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input }) });
+    let result = {}; try { result = await response.json(); } catch {}
+    if (!response.ok) return json({ error: result.error?.message || `Gemini description generation failed (HTTP ${response.status}).` }, 502);
+    const description = (result.outputs || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
+    if (!description) return json({ error: "Gemini returned no description." }, 502);
+    return json({ description: description.slice(0, 5000) });
+  }
+
   const idx = await load();
+
+  if (b.action === "list-scheduled") return json({ episodes: idx.episodes.filter(e => e.publishAt && Date.parse(e.publishAt) > Date.now()).sort((a, b) => Date.parse(a.publishAt) - Date.parse(b.publishAt)) });
+
+  if (b.action === "publish-now" || b.action === "set-schedule") {
+    const id = String(b.id || ""), episode = idx.episodes.find(e => e.id === id);
+    if (!episode) return json({ error: "Not found" }, 404);
+    if (b.action === "publish-now") episode.publishAt = null;
+    else {
+      const when = Date.parse(b.publishAt || "");
+      if (!Number.isFinite(when) || when <= Date.now()) return json({ error: "Choose a future publish time." }, 400);
+      episode.publishAt = new Date(when).toISOString();
+    }
+    await store.setJSON("episodes.json", idx);
+    return json({ ok: true, episode });
+  }
 
   if (b.action === "publish") {
     const e = b.episode || {}, id = String(e.id || "");
@@ -51,12 +124,16 @@ async function handle(context) {
     if (blobs.length !== chunks) return json({ error: `Expected ${chunks} audio parts, found ${blobs.length}` }, 400);
     const title = String(e.title || "").trim().slice(0, 200);
     if (!title) return json({ error: "Title required" }, 400);
+    const requestedPublishAt = String(e.publishAt || "").trim(), publishTime = requestedPublishAt ? Date.parse(requestedPublishAt) : NaN;
+    if (requestedPublishAt && (!Number.isFinite(publishTime) || publishTime <= Date.now())) return json({ error: "Choose a future publish time, or leave it blank to publish now." }, 400);
     const rec = {
       id, num: idx.episodes.reduce((m, x) => Math.max(m, x.num || 0), 0) + 1, title,
       unit: String(e.unit || "").slice(0, 80),
       date: /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : new Date().toISOString().slice(0, 10),
       rant: Math.min(5, Math.max(1, +e.rant || 3)),
       desc: String(e.desc || "").trim().slice(0, 5000),
+      transcript: String(e.transcript || "").trim().slice(0, 200000),
+      publishAt: requestedPublishAt ? new Date(publishTime).toISOString() : null,
       size, chunks, type: /^audio\/[\w.+-]+$/.test(e.type) ? e.type : "audio/webm",
     };
     idx.episodes.push(rec);
