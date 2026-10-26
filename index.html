@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Agastya Archive</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='60' cy='60' r='58' fill='%23b84a17'/%3E%3Cpath d='M26 48 60 24 94 48Z' fill='%23f4ecdc'/%3E%3Crect x='34' y='54' width='10' height='36' fill='%23f4ecdc'/%3E%3Crect x='76' y='54' width='10' height='36' fill='%23f4ecdc'/%3E%3Crect x='52' y='54' width='16' height='24' rx='8' fill='%23e0b04a'/%3E%3Crect x='28' y='92' width='64' height='6' fill='%23f4ecdc'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f4ecdc;--surface:#fbf6ea;--ink:#2a1f16;--mute:#6f5e49;--accent:#b84a17;--gold:#9a6f12;--line:#d9c9a8;--btn:#fff;
@@ -43,6 +44,67 @@ audio{width:100%;height:42px}
 .about{display:grid;gap:12px}
 .about p{margin:0;color:var(--mute)}
 footer{padding:36px 0 48px;color:var(--mute);font-size:13px;text-align:center}
+
+/* ---------- motion ---------- */
+@keyframes rise{from{opacity:0;transform:translateY(28px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes slam{0%{opacity:0;transform:scale(2.4) rotate(-14deg)}60%{opacity:1;transform:scale(.92) rotate(-4deg)}100%{opacity:1;transform:rotate(-2deg)}}
+@keyframes shimmer{to{background-position:200% center}}
+@keyframes drift1{to{transform:translate(18vmax,14vmax) scale(1.2)}}
+@keyframes drift2{to{transform:translate(-16vmax,-12vmax) scale(.9)}}
+@keyframes floatup{0%{transform:translateY(0) rotate(-10deg);opacity:0}10%{opacity:.35}90%{opacity:.2}100%{transform:translateY(-115vh) rotate(16deg);opacity:0}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes drop{from{opacity:0;transform:translateY(-30px)}to{opacity:1;transform:none}}
+@keyframes grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes pop{from{opacity:0;transform:scale(0)}to{opacity:1;transform:none}}
+@keyframes pulse{50%{transform:scale(1.14)}}
+@keyframes glow{50%{box-shadow:6px 6px 0 color-mix(in srgb,var(--accent) 35%,transparent),0 0 30px color-mix(in srgb,var(--accent) 45%,transparent)}}
+@keyframes flick{0%,100%{transform:scale(1) rotate(-4deg)}50%{transform:scale(1.2) rotate(5deg)}}
+@keyframes eq{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}
+.wrap{position:relative;z-index:1}
+.bg{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.blob{position:absolute;width:60vmax;height:60vmax;border-radius:50%;filter:blur(80px);opacity:.25}
+.b1{background:var(--accent);left:-25vmax;top:-25vmax;animation:drift1 24s ease-in-out infinite alternate}
+.b2{background:var(--gold);right:-30vmax;bottom:-30vmax;animation:drift2 30s ease-in-out infinite alternate}
+.bg .n{position:absolute;bottom:-50px;color:var(--gold);opacity:0;animation:floatup linear infinite}
+nav{animation:rise .7s both}
+.stamp{animation:slam .7s .3s cubic-bezier(.2,.9,.3,1.2) both}
+.hero h1 .w{display:inline-block;animation:rise .8s both}
+.hero h1 .w:nth-child(1){animation-delay:.45s}.hero h1 .w:nth-child(2){animation-delay:.6s}
+.hero h1 em.w{animation:rise .8s .75s both,shimmer 5s linear infinite;background:linear-gradient(90deg,var(--accent),var(--gold),var(--accent));background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.08em}
+.hero p{animation:rise .8s .95s both}
+.logo{width:104px;height:104px;display:block;margin-bottom:14px;overflow:visible}
+.logo .fa{fill:var(--accent)}.logo .fg{fill:var(--gold)}.logo .fi{fill:var(--ink)}
+.logo .sa{stroke:var(--accent);fill:none}.logo .sg{stroke:var(--gold);fill:none}
+.logo .ring{stroke-dasharray:352;stroke-dashoffset:352;animation:draw 1.6s .1s ease forwards}
+.logo .orbit{transform-origin:60px 60px;animation:spin 40s linear infinite}
+.logo .ped{transform-box:fill-box;transform-origin:center;animation:drop .6s .7s cubic-bezier(.2,1.4,.4,1) both}
+.logo .col{transform-box:fill-box;transform-origin:bottom;animation:grow .6s both}
+.logo .c1{animation-delay:.9s}.logo .c3{animation-delay:1.05s}
+.logo .mic{transform-box:fill-box;transform-origin:center;animation:pop .5s 1.2s both,pulse 2.4s 1.8s ease-in-out infinite}
+.fx .rv{opacity:0;transform:translateY(26px);transition:opacity .7s,transform .7s}
+.fx .rv.in{opacity:1;transform:none}
+.fx .rule.rv{opacity:1;transform:scaleX(0);transform-origin:left;transition:transform 1.2s}
+.fx .rule.rv.in{transform:scaleX(1)}
+.ep{transition:transform .25s,box-shadow .25s,border-color .25s}
+.ep:hover{transform:translateY(-4px);border-color:var(--gold)}
+.ep.latest{animation:glow 3s ease-in-out infinite}
+.ep.playing{border-color:var(--accent)}
+.fl{display:inline-block;transform-origin:50% 90%;animation:flick 1.1s ease-in-out infinite}
+.rant{display:inline-flex;align-items:center;gap:1px}
+.eq{display:none;gap:2px;align-items:flex-end;height:14px}
+.playing .eq{display:inline-flex}
+.eq i{width:3px;height:100%;background:var(--accent);transform-origin:bottom;animation:eq .8s ease-in-out infinite}
+.eq i:nth-child(2){animation-delay:.2s}.eq i:nth-child(3){animation-delay:.4s}
+.chip{transition:transform .2s,color .2s,background .2s}
+.chip:hover{transform:translateY(-2px);color:var(--ink)}.chip:active{transform:scale(.94)}
+.mus{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom));z-index:60;display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--gold);color:var(--ink);padding:10px 15px;border-radius:99px;font:700 13px 'Space Grotesk',sans-serif;cursor:pointer;box-shadow:0 6px 22px rgba(0,0,0,.28);transition:transform .2s;animation:rise .8s 1.3s both}
+.mus:hover{transform:translateY(-2px)}.mus:active{transform:scale(.95)}
+.mus .bars{display:flex;gap:2px;align-items:flex-end;height:14px}
+.mus .bars i{width:3px;height:100%;background:var(--gold);transform:scaleY(.3);transform-origin:bottom}
+.mus.on .bars i{animation:eq .7s ease-in-out infinite}
+.mus.on .bars i:nth-child(2){animation-delay:.15s}.mus.on .bars i:nth-child(3){animation-delay:.3s}.mus.on .bars i:nth-child(4){animation-delay:.45s}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 </style>
 </head>
 <body>
@@ -50,8 +112,18 @@ footer{padding:36px 0 48px;color:var(--mute);font-size:13px;text-align:center}
   <nav><span><b>◆</b> Est. AP World History</span><span>New rants regularly</span></nav>
 
   <header class="hero">
+    <svg class="logo" viewBox="0 0 120 120" role="img" aria-label="The Agastya Archive logo">
+      <circle class="ring sa" cx="60" cy="60" r="56" stroke-width="3"/>
+      <circle class="orbit sg" cx="60" cy="60" r="49" stroke-width="1.2" stroke-dasharray="2 6"/>
+      <path class="ped fa" d="M24 48 60 22 96 48Z"/>
+      <rect class="fg" x="29" y="50" width="62" height="5"/>
+      <rect class="col c1 fi" x="34" y="57" width="10" height="33" rx="1.5"/>
+      <rect class="col c3 fi" x="76" y="57" width="10" height="33" rx="1.5"/>
+      <g class="mic"><rect class="fg" x="53" y="56" width="14" height="22" rx="7"/><path class="sg" d="M48 70a12 12 0 0 0 24 0M60 82v8" stroke-width="3" stroke-linecap="round"/></g>
+      <rect class="fi" x="28" y="90" width="64" height="5" rx="1"/>
+    </svg>
     <div class="stamp">CASE FILE · ACADEMICALLY UNHINGED</div>
-    <h1>The Agastya <em>Archive</em></h1>
+    <h1><span class="w">The</span> <span class="w">Agastya</span> <em class="w">Archive</em></h1>
     <p>History from AP World, dragged out of the textbook, ranted about, and taken apart piece by piece. Hosted by Agastya.</p>
   </header>
 
@@ -101,8 +173,8 @@ function render(){
   if(!shown.length){list.append(h("div",{class:"empty"},err||"The first episode is being researched, ranted about, and edited. Check back soon."));return}
   shown.forEach((e,i)=>{
     const c=h("article",{class:"ep"+(i===0&&filter==="All"?" latest":"")},
-      h("div",{class:"meta"},h("span",{class:"num"},"EP "+e.num),e.unit?h("span",{class:"tag"},e.unit):null,h("span",null,fmt(e.date)),
-        e.rant?h("span",{class:"rant"},"Rant level "+"\u{1F525}".repeat(Math.min(5,Math.max(1,e.rant)))):null),
+      h("div",{class:"meta"},h("span",{class:"num"},"EP "+e.num),h("span",{class:"eq"},h("i"),h("i"),h("i")),e.unit?h("span",{class:"tag"},e.unit):null,h("span",null,fmt(e.date)),
+        e.rant?h("span",{class:"rant"},"Rant level ",...Array.from({length:Math.min(5,Math.max(1,e.rant))},(_,i)=>h("span",{class:"fl",style:"animation-delay:"+(i*.18)+"s"},"\u{1F525}"))):null),
       h("h3",null,e.title),e.desc?h("p",null,e.desc):null,
       h("audio",{controls:"",preload:"none",src:"/api/audio?id="+encodeURIComponent(e.id)}));
     if(adminPw)c.append(h("button",{class:"del",onclick:()=>del(e)},"Delete"));
@@ -111,6 +183,7 @@ function render(){
 }
 load();
 </script>
+<script src="fx.js"></script>
 <script src="host.js"></script>
 </body>
 </html>
