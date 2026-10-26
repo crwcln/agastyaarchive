@@ -73,7 +73,7 @@ async function handle(context) {
     const geminiFile = fileResult.file;
     try {
       const model = env.GEMINI_TRANSCRIBE_MODEL || "gemini-3.5-transcribe";
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ fileData: { fileUri: geminiFile.uri, mimeType: geminiFile.mimeType || mime } }] }], generationConfig: { audioTranscriptionConfig: { mode: "SMART" } } }) });
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ fileData: { fileUri: geminiFile.uri, mimeType: geminiFile.mimeType || mime } }] }], generationConfig: { audioTranscriptionConfig: { mode: "SMART", customVocabulary: ["Agastya", "The Agastya Archive"] } } }) });
       let result = {}; try { result = await response.json(); } catch {}
       if (!response.ok) return json({ error: result.error?.message || `Gemini transcription failed (HTTP ${response.status}).` }, 502);
       const candidate = result.candidates?.[0];

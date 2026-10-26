@@ -12,4 +12,4 @@ EdgeOne maps `cloud-functions/api/episodes.js` to `/api/episodes` and `cloud-fun
 
 ## Episode tools
 
-The host panel can transcribe audio, generate a description with Gemini, publish now, or schedule a future release. Add GEMINI_API_KEY to the cloud-function environment; optionally set GEMINI_TRANSCRIBE_MODEL and GEMINI_TEXT_MODEL. Scheduled episodes appear publicly when their publish time arrives. The host panel can reschedule, publish now, or delete them.
+The host panel can transcribe audio with Gemini custom vocabulary hints for Agastya and The Agastya Archive, generate a description, publish now, or schedule a future release. Add GEMINI_API_KEY to the cloud-function environment; optionally set GEMINI_TRANSCRIBE_MODEL and GEMINI_TEXT_MODEL. Scheduled episodes appear publicly when their publish time arrives. The host panel can reschedule, publish now, or delete them.
