@@ -62,7 +62,10 @@ const fmtT=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 const elapsed=()=>acc+(rec&&rec.state==="recording"?(Date.now()-t0)/1000:0);
 async function api(body){
   const r=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":pw},body:JSON.stringify(body)});
-  const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||"HTTP "+r.status);return d;
+  const t=await r.text();let d={};try{d=JSON.parse(t)}catch(e){}
+  if(!r.ok)throw new Error(d.error||(r.status===404?"API not found (HTTP 404): the cloud-functions folder isn’t deployed.":"HTTP "+r.status+(t?": "+t.slice(0,120):"")));
+  if(!Object.keys(d).length)throw new Error("API returned something that isn’t JSON (functions probably aren’t deployed).");
+  return d;
 }
 async function unlock(p){
   pw=p;
@@ -71,7 +74,7 @@ async function unlock(p){
 }
 $("hpshow").onclick=()=>{const i=$("hppw"),s=i.type==="password";i.type=s?"text":"password";$("hpshow").textContent=s?"Hide":"Show";i.focus()};
 $("hpunlock").onclick=()=>unlock($("hppw").value);
-$("hppw").onkeydown=e=>e.key==="Enter"&&unlock($("hppw").value);
+$("hppw").addEventListener("keydown",e=>{if(e.key==="Enter")unlock($("hppw").value)});
 if(pw)unlock(pw);
 
 const open=v=>{panel.classList.toggle("open",v);if(v)setTimeout(()=>{const t=$("hplock").hidden?$("hptitle"):$("hppw");t.focus()},300)};
