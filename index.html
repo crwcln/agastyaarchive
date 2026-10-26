@@ -25,7 +25,7 @@ nav b{color:var(--gold)}
 .hero h1 em{color:var(--accent);font-style:italic}
 .hero p{max-width:560px;color:var(--mute);font-size:18px;margin:18px 0 0}
 .rule{height:1px;background:var(--line);margin:30px 0}
-.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin:0 0 18px}
+.update-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 22px;padding:12px 16px;background:var(--surface);border:1px solid var(--accent);border-left:5px solid var(--accent);color:var(--ink);font-size:14px}.update-banner[hidden]{display:none}.update-banner a{flex:none;color:var(--accent);font-weight:700}.update-banner button{flex:none;border:0;background:transparent;color:var(--mute);font:inherit;font-size:20px;cursor:pointer;line-height:1;padding:0 4px}@media(max-width:520px){.update-banner{align-items:flex-start}.update-banner a{white-space:nowrap}}.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin:0 0 18px}
 .chip{flex:none;border:1px solid var(--line);background:transparent;color:var(--mute);padding:6px 14px;border-radius:99px;font:inherit;font-size:13px;cursor:pointer}
 .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .sec{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
@@ -126,11 +126,12 @@ nav{animation:rise .7s both}
     <h1><span class="w">The</span> <span class="w">Agastya</span> <em class="w">Archive</em></h1>
     <p>History from AP World, dragged out of the textbook, ranted about, and taken apart piece by piece. Hosted by Agastya.</p>
   </header>
+  <div class="update-banner" id="updateBanner" role="status" aria-live="polite" hidden><span id="updateMessage"></span><a href="#episodes">Listen</a><button type="button" id="dismissUpdate" aria-label="Dismiss update notice">×</button></div>
 
   <div class="rule"></div>
 
   
-  <section>
+  <section id="episodes">
     <div class="sec"><h2>Episodes</h2><span id="count"></span></div>
     <div class="chips" id="chips"></div>
     <div id="list"></div>
@@ -151,10 +152,26 @@ nav{animation:rise .7s both}
 let filter="All",eps=[],adminPw=null,err="";
 const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(x==="class")e.className=a[x];else if(x.startsWith("on"))e[x]=a[x];else e.setAttribute(x,a[x])}for(const c of k.flat())if(c!=null)e.append(c);return e};
 const fmt=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
+const updateBanner=document.getElementById("updateBanner"),updateMessage=document.getElementById("updateMessage");
+document.getElementById("dismissUpdate").onclick=()=>{updateBanner.hidden=true};
+function noticeNewEpisodes(items){
+  if(!items.length)return;
+  const key="aa_last_seen_episode_num",latest=Number(items[0].num);
+  try{
+    const saved=localStorage.getItem(key);
+    if(saved===null){localStorage.setItem(key,String(latest));return}
+    const count=latest-Number(saved);
+    if(count>0){
+      updateMessage.textContent=count===1?"New episode since your last visit: EP "+latest+" — "+items[0].title:count+" new episodes since your last visit. Latest: EP "+latest+" — "+items[0].title;
+      updateBanner.hidden=false;
+    }
+    localStorage.setItem(key,String(Math.max(latest,Number(saved)||0)));
+  }catch(e){}
+}
 async function load(){
   try{const r=await fetch("/api/episodes"),t=await r.text();let d;try{d=JSON.parse(t)}catch(x){}
     if(!r.ok||!d)throw new Error(d&&d.error?d.error:"HTTP "+r.status+(r.ok?", not JSON":""));
-    eps=(d.episodes||[]).sort((a,b)=>b.num-a.num);err=""}
+    eps=(d.episodes||[]).sort((a,b)=>b.num-a.num);noticeNewEpisodes(eps);err=""}
   catch(e){err="Couldn\u2019t load episodes: "+e.message+". (Running locally? Use \u201cedgeone pages dev\u201d.)"}
   render();
 }
