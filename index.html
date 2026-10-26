@@ -75,28 +75,42 @@ footer{padding:36px 0 48px;color:var(--mute);font-size:13px;text-align:center}
   <footer>© The Agastya Archive · Not an official College Board product, please don’t sue.</footer>
 </div>
 
-<script src="episodes.js"></script>
 <script>
-let filter="All";
+let filter="All",eps=[],adminPw=null,err="";
 const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(x==="class")e.className=a[x];else if(x.startsWith("on"))e[x]=a[x];else e.setAttribute(x,a[x])}for(const c of k.flat())if(c!=null)e.append(c);return e};
 const fmt=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
-const eps=[...EPISODES].sort((a,b)=>b.num-a.num);
+async function load(){
+  try{const r=await fetch("/api/episodes");if(!r.ok)throw 0;eps=((await r.json()).episodes||[]).sort((a,b)=>b.num-a.num);err=""}
+  catch(e){err="Couldn\u2019t load episodes. (Running locally? Use \u201cedgeone pages dev\u201d so the API works.)"}
+  render();
+}
+window.loadEpisodes=load;window.setAdmin=pw=>{adminPw=pw;render()};
+async function del(e){
+  if(!confirm("Delete \u201c"+e.title+"\u201d for good?"))return;
+  try{const r=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":adminPw},body:JSON.stringify({action:"delete",id:e.id})});if(!r.ok)throw 0;load()}
+  catch(x){alert("Couldn\u2019t delete.")}
+}
 function render(){
   const units=["All",...new Set(eps.map(e=>e.unit).filter(Boolean))];
+  if(!units.includes(filter))filter="All";
   const chips=document.getElementById("chips");chips.replaceChildren();
   if(units.length>2)units.forEach(u=>chips.append(h("button",{class:"chip"+(u===filter?" on":""),onclick:()=>{filter=u;render()}},u)));
   const shown=eps.filter(e=>filter==="All"||e.unit===filter);
-  document.getElementById("count").textContent=eps.length+(eps.length===1?" episode":" episodes");
+  document.getElementById("count").textContent=eps.length?eps.length+(eps.length===1?" episode":" episodes"):"";
   const list=document.getElementById("list");list.replaceChildren();
-  if(!shown.length){list.append(h("div",{class:"empty"},"The first episode is being researched, ranted about, and edited. Check back soon."));return}
-  shown.forEach((e,i)=>list.append(h("article",{class:"ep"+(i===0&&filter==="All"?" latest":"")},
-    h("div",{class:"meta"},h("span",{class:"num"},"EP "+e.num),e.unit?h("span",{class:"tag"},e.unit):null,h("span",null,fmt(e.date)),
-      e.rant?h("span",{class:"rant"},"Rant level "+"\u{1F525}".repeat(Math.min(5,Math.max(1,e.rant)))):null),
-    h("h3",null,e.title),
-    e.desc?h("p",null,e.desc):null,
-    e.audio?h("audio",{controls:"",preload:"none",src:e.audio}):h("div",{class:"noaudio"},"Audio coming soon."))));
+  if(!shown.length){list.append(h("div",{class:"empty"},err||"The first episode is being researched, ranted about, and edited. Check back soon."));return}
+  shown.forEach((e,i)=>{
+    const c=h("article",{class:"ep"+(i===0&&filter==="All"?" latest":"")},
+      h("div",{class:"meta"},h("span",{class:"num"},"EP "+e.num),e.unit?h("span",{class:"tag"},e.unit):null,h("span",null,fmt(e.date)),
+        e.rant?h("span",{class:"rant"},"Rant level "+"\u{1F525}".repeat(Math.min(5,Math.max(1,e.rant)))):null),
+      h("h3",null,e.title),e.desc?h("p",null,e.desc):null,
+      h("audio",{controls:"",preload:"none",src:"/api/audio?id="+encodeURIComponent(e.id)}));
+    if(adminPw)c.append(h("button",{class:"del",onclick:()=>del(e)},"Delete"));
+    list.append(c);
+  });
 }
-render();
+load();
 </script>
+<script src="host.js"></script>
 </body>
 </html>
