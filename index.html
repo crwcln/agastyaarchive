@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Agastya Archive</title>
 <script src="site-config.js"></script>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='60' cy='60' r='58' fill='%23b84a17'/%3E%3Cpath d='M26 48 60 24 94 48Z' fill='%23f4ecdc'/%3E%3Crect x='34' y='54' width='10' height='36' fill='%23f4ecdc'/%3E%3Crect x='76' y='54' width='10' height='36' fill='%23f4ecdc'/%3E%3Crect x='52' y='54' width='16' height='24' rx='8' fill='%23e0b04a'/%3E%3Crect x='28' y='92' width='64' height='6' fill='%23f4ecdc'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f4ecdc;--surface:#fbf6ea;--ink:#2a1f16;--mute:#6f5e49;--accent:#b84a17;--gold:#9a6f12;--line:#d9c9a8;--btn:#fff;
@@ -74,15 +74,7 @@ nav{animation:rise .7s both}
 .hero h1 .w:nth-child(1){animation-delay:.45s}.hero h1 .w:nth-child(2){animation-delay:.6s}
 .hero h1 em.w{animation:rise .8s .75s both,shimmer 5s linear infinite;background:linear-gradient(90deg,var(--accent),var(--gold),var(--accent));background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.08em}
 .hero p{animation:rise .8s .95s both}
-.logo{width:104px;height:104px;display:block;margin-bottom:14px;overflow:visible}
-.logo .fa{fill:var(--accent)}.logo .fg{fill:var(--gold)}.logo .fi{fill:var(--ink)}
-.logo .sa{stroke:var(--accent);fill:none}.logo .sg{stroke:var(--gold);fill:none}
-.logo .ring{stroke-dasharray:352;stroke-dashoffset:352;animation:draw 1.6s .1s ease forwards}
-.logo .orbit{transform-origin:60px 60px;animation:spin 40s linear infinite}
-.logo .ped{transform-box:fill-box;transform-origin:center;animation:drop .6s .7s cubic-bezier(.2,1.4,.4,1) both}
-.logo .col{transform-box:fill-box;transform-origin:bottom;animation:grow .6s both}
-.logo .c1{animation-delay:.9s}.logo .c3{animation-delay:1.05s}
-.logo .mic{transform-box:fill-box;transform-origin:center;animation:pop .5s 1.2s both,pulse 2.4s 1.8s ease-in-out infinite}
+.logo{width:104px;height:104px;display:block;margin-bottom:14px;overflow:visible;animation:rise .8s .1s both;filter:drop-shadow(0 5px 8px color-mix(in srgb,var(--ink) 16%,transparent))}
 .fx .rv{opacity:0;transform:translateY(26px);transition:opacity .7s,transform .7s}
 .fx .rv.in{opacity:1;transform:none}
 .fx .rule.rv{opacity:1;transform:scaleX(0);transform-origin:left;transition:transform 1.2s}
@@ -113,16 +105,7 @@ nav{animation:rise .7s both}
   <nav><span><b>◆</b> Est. AP World History</span><span>New rants regularly</span></nav>
 
   <header class="hero">
-    <svg class="logo" viewBox="0 0 120 120" role="img" aria-label="The Agastya Archive logo">
-      <circle class="ring sa" cx="60" cy="60" r="56" stroke-width="3"/>
-      <circle class="orbit sg" cx="60" cy="60" r="49" stroke-width="1.2" stroke-dasharray="2 6"/>
-      <path class="ped fa" d="M24 48 60 22 96 48Z"/>
-      <rect class="fg" x="29" y="50" width="62" height="5"/>
-      <rect class="col c1 fi" x="34" y="57" width="10" height="33" rx="1.5"/>
-      <rect class="col c3 fi" x="76" y="57" width="10" height="33" rx="1.5"/>
-      <g class="mic"><rect class="fg" x="53" y="56" width="14" height="22" rx="7"/><path class="sg" d="M48 70a12 12 0 0 0 24 0M60 82v8" stroke-width="3" stroke-linecap="round"/></g>
-      <rect class="fi" x="28" y="90" width="64" height="5" rx="1"/>
-    </svg>
+    <img class="logo" src="logo.svg" alt="The Agastya Archive emblem" width="104" height="104">
     <div class="stamp">CASE FILE · ACADEMICALLY UNHINGED</div>
     <h1><span class="w">The</span> <span class="w">Agastya</span> <em class="w">Archive</em></h1>
     <p>History from AP World, dragged out of the textbook, ranted about, and taken apart piece by piece. Hosted by Agastya.</p>
