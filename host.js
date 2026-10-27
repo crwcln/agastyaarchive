@@ -158,7 +158,19 @@ $("hpscriptGenerate").onclick=async()=>{
   if(!title){status.textContent="Add an episode title or topic first.";status.dataset.error="true";return}
   btn.disabled=true;status.textContent="Generating your script with Gemini...";
   try{
-    const result=await api({action:"generate-script",title,unit:$("hpunit").value,minutes:+$("hpscriptTime").value,tone:$("hpscriptTone").value,rant:+$("hprant").value,description:$("hpdesc").value.trim()});
+    const started=await api({action:"generate-script",title,unit:$("hpunit").value,minutes:+$("hpscriptTime").value,tone:$("hpscriptTone").value,rant:+$("hprant").value,description:$("hpdesc").value.trim()});
+    if(!started.interactionId)throw new Error("Gemini did not start script generation.");
+    const deadline=Date.now()+15*60*1000;
+    let result;
+    while(Date.now()<deadline){
+      await new Promise(resolve=>setTimeout(resolve,2500));
+      status.textContent="Gemini is writing the script... This can take a few minutes.";
+      try{result=await api({action:"script-status",id:started.interactionId})}
+      catch(e){if(/HTTP 50[234]/.test(e.message))continue;throw e}
+      if(result.status==="completed")break;
+      if(result.error)throw new Error(result.error);
+    }
+    if(!result||result.status!=="completed")throw new Error("Gemini is still working. Try generating again in a moment.");
     if(!result.script)throw new Error("Gemini returned no script.");
     $("hpscript").value=result.script;status.textContent="Script ready. Edit it or copy it for recording."
   }catch(e){status.textContent="Script generation failed: "+e.message;status.dataset.error="true"}

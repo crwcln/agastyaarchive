@@ -109,13 +109,27 @@ async function handle(context) {
     if (![3, 5, 8, 10, 15, 20].includes(minutes)) return json({ error: "Choose a script length from 3 to 20 minutes." }, 400);
     if (!Number.isInteger(rant) || rant < 1 || rant > 5) return json({ error: "Choose a rant level from 1 to 5." }, 400);
     const targetWords = minutes * 135;
-    const input = `Write a ready-to-record podcast script for The Agastya Archive, an AP World History show. Topic/title: ${title}. Course unit: ${unit || "not specified"}. Target length: about ${minutes} minutes at a natural speaking pace, roughly ${targetWords} words. Tone: ${tone}. Rant level: ${rant}/5, where 1 is lightly opinionated and 5 is a fiery, funny rant. Keep criticism aimed at historical choices, systems, and arguments, never at people based on identity. Give the script a strong opening hook, clear transitions, accurate historical context, and a memorable closing. Use spoken language, occasional concise delivery cues in brackets, and paragraphs that are easy to read aloud. Do not invent quotations, sources, or facts; avoid unsupported certainty and explain nuance where needed. Return only the script. Context from the host, if any: ${String(b.description || "").trim().slice(0, 2000)}`;
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input }) });
+    const input = "Write a ready-to-record podcast script for The Agastya Archive, an AP World History show. Topic/title: " + title + ". Course unit: " + (unit || "not specified") + ". Target length: about " + minutes + " minutes at a natural speaking pace, roughly " + targetWords + " words. Tone: " + tone + ". Rant level: " + rant + "/5, where 1 is lightly opinionated and 5 is a fiery, funny rant. Keep criticism aimed at historical choices, systems, and arguments, never at people based on identity. Give the script a strong opening hook, clear transitions, accurate historical context, and a memorable closing. Use spoken language, occasional concise delivery cues in brackets, and paragraphs that are easy to read aloud. Do not invent quotations, sources, or facts; avoid unsupported certainty and explain nuance where needed. Return only the script. Context from the host, if any: " + String(b.description || "").trim().slice(0, 2000);
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: false }) });
     let result = {}; try { result = await response.json(); } catch {}
-    if (!response.ok) return json({ error: result.error?.message || `Gemini script generation failed (HTTP ${response.status}).` }, 502);
-    const script = (result.outputs || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
-    if (!script) return json({ error: "Gemini returned no script." }, 502);
-    return json({ script: script.slice(0, 50000) });
+    if (!response.ok) return json({ error: result.error?.message || "Gemini script generation failed (HTTP " + response.status + ")." }, 502);
+    const interactionId = result.id || result.interaction?.id;
+    if (!interactionId) return json({ error: "Gemini did not return a background interaction ID." }, 502);
+    return json({ interactionId, status: result.status || "in_progress" });
+  }
+
+  if (b.action === "script-status") {
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const id = String(b.id || "");
+    if (!/^[A-Za-z0-9_-]{10,200}$/.test(id)) return json({ error: "Bad script generation ID." }, 400);
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions/" + encodeURIComponent(id), { headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Api-Revision": "2026-05-20" } });
+    let result = {}; try { result = await response.json(); } catch {}
+    if (!response.ok) return json({ error: result.error?.message || "Gemini script status failed (HTTP " + response.status + ")." }, 502);
+    const status = String(result.status || "in_progress");
+    const script = (result.steps || []).filter(step => step.type === "model_output").flatMap(step => step.content || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
+    if (status === "completed" && !script) return json({ error: "Gemini completed the request without returning a script.", status });
+    if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: result.error?.message || "Gemini generation ended with status: " + status + ".", status });
+    return json({ status, ...(status === "completed" ? { script: script.slice(0, 50000) } : {}) });
   }
 
   if (b.action === "describe") {
@@ -123,7 +137,7 @@ async function handle(context) {
     const transcript = String(b.transcript || "").trim();
     if (!transcript) return json({ error: "Add a transcript first." }, 400);
     if (transcript.length > 100000) return json({ error: "Transcript is too long to generate a description." }, 400);
-    const input = `Write a lively, accurate 2–3 sentence episode description for The Agastya Archive, an AP World History podcast. Use the episode title and unit for context. Base claims only on the transcript. Do not invent topics or conclusions. Return only the description.\n\nTitle: ${String(b.title || "").slice(0, 200)}\nUnit: ${String(b.unit || "").slice(0, 100)}\nTranscript:\n${transcript}`;
+    const input = `Write a lively, accurate 2â€“3 sentence episode description for The Agastya Archive, an AP World History podcast. Use the episode title and unit for context. Base claims only on the transcript. Do not invent topics or conclusions. Return only the description.\n\nTitle: ${String(b.title || "").slice(0, 200)}\nUnit: ${String(b.unit || "").slice(0, 100)}\nTranscript:\n${transcript}`;
     const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input }) });
     let result = {}; try { result = await response.json(); } catch {}
     if (!response.ok) return json({ error: result.error?.message || `Gemini description generation failed (HTTP ${response.status}).` }, 502);
