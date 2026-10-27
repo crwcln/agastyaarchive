@@ -46,7 +46,7 @@ panel.innerHTML=`<div class="in">
 <label>Date</label><input id="hpdate" type="date"><div id="publishScheduleField"><label for="hpwhen">Publish date and time (leave empty to publish now)</label><input id="hpwhen" type="datetime-local"></div>
 <label>Title</label><input id="hptitle" placeholder="e.g. The Mongols Were NOT Just Raiders">
 <label>Unit</label><select id="hpunit"></select>
-<section id="scriptGenerator" class="script-generator"><div class="schedule-head"><h3>Script generator</h3><span class="note">Host-only draft</span></div><div class="r2"><div><label for="hpscriptTime">Length</label><select id="hpscriptTime"><option value="3">3 minutes</option><option value="5" selected>5 minutes</option><option value="8">8 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option></select></div><div><label for="hpscriptTone">Tone</label><select id="hpscriptTone"><option value="Energetic and conversational">Energetic and conversational</option><option value="Dryly funny">Dryly funny</option><option value="Dramatic storytelling">Dramatic storytelling</option><option value="Clear and classroom-friendly">Clear and classroom-friendly</option><option value="Sharp and argumentative">Sharp and argumentative</option></select></div><div><label for="hprant">Rant level</label><select id="hprant"></select></div></div><div class="acts"><button type="button" id="hpscriptGenerate" class="go">Generate script with AI</button><button type="button" id="hpscriptCopy">Copy script</button></div><div id="hpscriptStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpscript" placeholder="Your episode script will appear here. You can edit or copy it; it is not published with the episode."></textarea></section>
+<section id="scriptGenerator" class="script-generator"><div class="schedule-head"><h3>Script generator</h3><span class="note">Host-only draft</span></div><div class="r2"><div><label for="hpscriptTime">Length</label><select id="hpscriptTime"><option value="3">3 minutes</option><option value="5" selected>5 minutes</option><option value="8">8 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option></select></div><div><label for="hpscriptTone">Tone</label><select id="hpscriptTone"><option value="Energetic and conversational">Energetic and conversational</option><option value="Dryly funny">Dryly funny</option><option value="Dramatic storytelling">Dramatic storytelling</option><option value="Clear and classroom-friendly">Clear and classroom-friendly</option><option value="Sharp and argumentative">Sharp and argumentative</option></select></div><div><label for="hprant">Rant level</label><select id="hprant"></select></div></div><div class="acts"><button type="button" id="hpscriptGenerate" class="go">Generate script with AI</button><button type="button" id="hpscriptCopy">Copy script</button></div><div id="hpscriptStatus" class="ai-status" role="status" aria-live="polite"></div><div id="hpscriptDiag" hidden><label for="hpscriptJobId">Gemini interaction ID</label><div class="pwrow"><input id="hpscriptJobId" placeholder="v1_..."><button type="button" id="hpscriptRecheck">Check job details</button></div><div id="hpscriptDiagStatus" class="ai-status" role="status" aria-live="polite"></div></div><textarea id="hpscript" placeholder="Your episode script will appear here. You can edit or copy it; it is not published with the episode."></textarea></section>
 <div class="field-head"><label for="hpdesc">The rant (description)</label><button type="button" id="hpdescribe">Generate with AI</button></div><div id="hpdescribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpdesc" placeholder="A short episode description"></textarea><div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><div id="hptranscribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div><div id="chapterEditor"><label class="chapter-options"><input type="checkbox" id="hpautoChapters" checked> Automatically generate chapters for this recording</label><label for="hpchapters">Episode chapters (one per line: 00:00 Introduction)</label><textarea id="hpchapters" placeholder="00:00 Introduction"></textarea><div id="hpchapterStatus" class="ai-status" role="status" aria-live="polite"></div></div>
 <progress id="hpprog" max="100" value="0" hidden></progress>
 <div class="acts"><button class="go" id="hppub">Publish episode</button><span id="hpmsg"></span></div><div class="schedule-row"><div class="schedule-head"><h3>Scheduled episodes</h3><button type="button" id="hpschedrefresh">Refresh</button></div><div id="hpscheduled" class="note">Unlock to load scheduled episodes.</div></div>
@@ -189,6 +189,7 @@ $("hpscriptGenerate").onclick=async()=>{
   try{
     const started=await api({action:"generate-script",title,unit:$("hpunit").value,minutes:+$("hpscriptTime").value,tone:$("hpscriptTone").value,rant:+$("hprant").value,description:$("hpdesc").value.trim()});
     if(!started.interactionId)throw new Error("Gemini did not start script generation.");
+    $("hpscriptJobId").value=started.interactionId;
     const deadline=Date.now()+15*60*1000;
     let result;
     while(Date.now()<deadline){
@@ -201,8 +202,17 @@ $("hpscriptGenerate").onclick=async()=>{
     }
     if(!result||result.status!=="completed")throw new Error("Gemini is still working. Try generating again in a moment.");
     if(!result.script)throw new Error("Gemini returned no script.");
-    $("hpscript").value=result.script;status.textContent="Script ready. Edit it or copy it for recording."
-  }catch(e){status.textContent="Script generation failed: "+e.message;status.dataset.error="true"}
+    $("hpscript").value=result.script;status.textContent="Script ready. Edit it or copy it for recording.";$("hpscriptDiag").hidden=true
+  }catch(e){status.textContent="Script generation failed: "+e.message;status.dataset.error="true";$("hpscriptDiag").hidden=false}
+  finally{btn.disabled=false}
+};
+$("hpscriptRecheck").onclick=async()=>{
+  const btn=$("hpscriptRecheck"),diag=$("hpscriptDiagStatus"),id=$("hpscriptJobId").value.trim();btn.disabled=true;diag.textContent="Checking Gemini job...";
+  try{
+    const result=await api({action:"script-status",id});
+    if(result.status==="completed"&&result.script){$("hpscript").value=result.script;diag.textContent="Script ready.";return}
+    diag.textContent="Gemini job status: "+(result.status||"unknown");
+  }catch(e){diag.textContent=e.message}
   finally{btn.disabled=false}
 };
 $("hpscriptCopy").onclick=async()=>{

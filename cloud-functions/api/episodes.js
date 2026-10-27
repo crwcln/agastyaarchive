@@ -8,14 +8,16 @@ const pad = i => String(i).padStart(5, "0");
 const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length === y.length && timingSafeEqual(x, y); };
 const interactionFailure = result => {
-  const message = value => typeof value === "string" ? value : value && typeof value === "object" ? String(value.message || value.detail || value.description || "") : "";
-  const details = [result.error, result.error_message, result.errorMessage, result.last_error, result.lastError, result.failure_reason, result.failureReason, result.status_details, result.message].map(message).filter(Boolean);
+  const message = value => typeof value === "string" ? value : value && typeof value === "object" ? String(value.message || value.detail || value.description || value.reason || value.code || "") : "";
+  const details = [result.error, result.error_message, result.errorMessage, result.last_error, result.lastError, result.failure_reason, result.failureReason, result.failure_details, result.status_details, result.status_message, result.message, result.details].map(message).filter(Boolean);
   for (const step of result.steps || []) {
-    if (step.type !== "error" && !step.error && step.status !== "failed") continue;
-    const detail = message(step.error) || (step.content || []).filter(item => item.type === "text").map(item => item.text || "").join(" ");
+    if (step.type !== "error" && !step.error && !step.error_code && step.status !== "failed") continue;
+    const detail = message(step.error) || message(step) || (step.content || []).filter(item => item.type === "text").map(item => item.text || "").join(" ");
     if (detail) details.push(detail);
   }
-  return [...new Set(details)].join(" ").slice(0, 1200);
+  const metadata = ["model=" + String(result.model || "unknown"), "steps=" + (result.steps || []).map(step => step.type + (step.status ? ":" + step.status : "")).join(",")];
+  if (result.updated) metadata.push("updated=" + result.updated);
+  return ([...new Set(details)].join(" ") || "No provider error field was returned.") + " [" + metadata.join("; ") + "]";
 };
 
 async function handle(context) {
@@ -138,7 +140,7 @@ async function handle(context) {
     const status = String(result.status || "in_progress");
     const script = (result.steps || []).filter(step => step.type === "model_output").flatMap(step => step.content || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
     if (status === "completed" && !script) return json({ error: "Gemini completed the request without returning a script.", status });
-    if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: "Gemini generation ended with status: " + status + ". " + (interactionFailure(result) || "Gemini did not provide a failure detail.") + " (Interaction " + id + ")", status });
+    if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: "Gemini generation ended with status: " + status + ". " + interactionFailure(result) + " (Interaction " + id + ")", status });
     return json({ status, ...(status === "completed" ? { script: script.slice(0, 50000) } : {}) });
   }
 
@@ -173,7 +175,7 @@ async function handle(context) {
     if (!response.ok) return json({ error: result.error?.message || "Gemini chapter status failed (HTTP " + response.status + ")." }, 502);
     const status = String(result.status || "in_progress");
     if (status !== "completed") {
-      if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: "Gemini chapter generation ended with status: " + status + ". " + (interactionFailure(result) || "Gemini did not provide a failure detail.") + " (Interaction " + id + ")", status });
+      if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: "Gemini chapter generation ended with status: " + status + ". " + interactionFailure(result) + " (Interaction " + id + ")", status });
       return json({ status });
     }
     const output = (result.steps || []).filter(step => step.type === "model_output").flatMap(step => step.content || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
