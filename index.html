@@ -40,7 +40,7 @@ nav b{color:var(--gold)}
 .ep p{margin:0 0 14px;color:var(--ink);opacity:.88;white-space:pre-wrap}
 .rant{font-size:12px;color:var(--mute);margin-left:auto}
 audio{width:100%;height:42px}
-.custom-player{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;margin-top:10px;padding:11px 13px;background:color-mix(in srgb,var(--bg) 72%,var(--surface));border:1px solid var(--line);border-radius:6px}.custom-player .ep-stream{display:none}.player-toggle{width:44px;height:44px;border:0;border-radius:50%;background:var(--accent);color:var(--btn);font:700 18px 'Space Grotesk',sans-serif;cursor:pointer;transition:transform .18s,background .18s}.player-toggle:hover{transform:scale(1.06);background:var(--gold)}.player-toggle:focus-visible,.player-speed:focus-visible,.player-seek:focus-visible{outline:3px solid var(--gold);outline-offset:3px}.player-main{min-width:0}.player-seek{appearance:none;display:block;width:100%;height:6px;margin:6px 0 12px;border-radius:99px;background:linear-gradient(to right,var(--accent) var(--progress,0%),var(--line) var(--progress,0%));cursor:pointer}.player-seek::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-seek::-moz-range-thumb{width:12px;height:12px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-meta{display:flex;justify-content:space-between;gap:10px;color:var(--mute);font-size:11px;line-height:1.3}.player-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.player-speed{min-width:48px;padding:7px 8px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--ink);font:700 12px 'Space Grotesk',sans-serif;cursor:pointer}.player-speed:hover{border-color:var(--accent);color:var(--accent)}@media(max-width:420px){.custom-player{grid-template-columns:42px minmax(0,1fr) 42px;gap:9px;padding:10px}.player-toggle{width:40px;height:40px}.player-speed{min-width:42px;padding:6px 4px}.player-meta{font-size:10px}}.transcript{margin:0 0 12px;border-top:1px solid var(--line);padding-top:10px}.transcript summary{color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.transcript-text{max-width:72ch;margin-top:10px;color:var(--mute);font-size:14px;line-height:1.8}.transcript-text p{margin:0 0 1em}.transcript-text p:last-child{margin-bottom:0}.noaudio{font-size:13px;color:var(--mute);font-style:italic}
+.custom-player{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;margin-top:10px;padding:11px 13px;background:color-mix(in srgb,var(--bg) 72%,var(--surface));border:1px solid var(--line);border-radius:6px}.custom-player .ep-stream{display:none}.player-toggle{width:44px;height:44px;border:0;border-radius:50%;background:var(--accent);color:var(--btn);font:700 18px 'Space Grotesk',sans-serif;cursor:pointer;transition:transform .18s,background .18s}.player-toggle:hover{transform:scale(1.06);background:var(--gold)}.player-toggle:focus-visible,.player-speed:focus-visible,.player-seek:focus-visible{outline:3px solid var(--gold);outline-offset:3px}.player-main{min-width:0}.player-seek{appearance:none;display:block;width:100%;height:6px;margin:6px 0 12px;border-radius:99px;background:linear-gradient(to right,var(--accent) var(--progress,0%),var(--line) var(--progress,0%));cursor:pointer}.player-seek::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-seek::-moz-range-thumb{width:12px;height:12px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-meta{display:flex;justify-content:space-between;gap:10px;color:var(--mute);font-size:11px;line-height:1.3}.player-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.player-speed{min-width:48px;padding:7px 8px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--ink);font:700 12px 'Space Grotesk',sans-serif;cursor:pointer}.player-speed:hover{border-color:var(--accent);color:var(--accent)}@media(max-width:420px){.custom-player{grid-template-columns:42px minmax(0,1fr) 42px;gap:9px;padding:10px}.player-toggle{width:40px;height:40px}.player-speed{min-width:42px;padding:6px 4px}.player-meta{font-size:10px}}.transcript{margin:0 0 12px;border-top:1px solid var(--line);padding-top:10px}.transcript summary{color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.transcript-text{max-width:72ch;margin-top:10px;color:var(--mute);font-size:14px;line-height:1.8}.transcript-text p{margin:0 0 1em}.transcript-text p:last-child{margin-bottom:0}.transcript-word{border-radius:3px;cursor:pointer;transition:background-color .08s,color .08s}.transcript-word:hover{background:color-mix(in srgb,var(--gold) 25%,transparent)}.transcript-word.active{background:var(--gold);color:var(--btn);box-shadow:0 0 0 2px var(--gold)}.noaudio{font-size:13px;color:var(--mute);font-style:italic}
 .empty{border:2px dashed var(--line);border-radius:6px;padding:36px 20px;text-align:center;color:var(--mute)}
 .about{display:grid;gap:12px}
 .about p{margin:0;color:var(--mute)}
@@ -215,9 +215,21 @@ async function del(e){
   try{const r=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":adminPw},body:JSON.stringify({action:"delete",id:e.id})});if(!r.ok)throw 0;load()}
   catch(x){alert("Couldn\u2019t delete.")}
 }
+function bindTranscriptHighlight(audio){
+  let elements=null,active=null;
+  const highlight=()=>{
+    if(elements===null){const article=audio.closest("article");if(!article)return;elements=[...article.querySelectorAll(".transcript-word")]}
+    const time=audio.currentTime;let low=0,high=elements.length-1,found=null;
+    while(low<=high){const mid=(low+high)>>1,word=elements[mid],start=Number(word.dataset.start),end=Number(word.dataset.end);if(time<start)high=mid-1;else if(time>=end)low=mid+1;else{found=word;break}}
+    if(found===active)return;
+    if(active)active.classList.remove("active");
+    active=found;if(active){active.classList.add("active");if(active.closest("details")&&!active.closest("details").open)active.closest("details").open=true}
+  };
+  audio.addEventListener("timeupdate",highlight);audio.addEventListener("seeked",highlight);
+}
 function playerFor(id){
   const src="/api/audio?id="+encodeURIComponent(id);
-  if(FEATURES.customAudioPlayer===false)return h("audio",{controls:"",preload:"none",src});
+  if(FEATURES.customAudioPlayer===false){const native=h("audio",{controls:"",preload:"none",src});bindTranscriptHighlight(native);return native}
   const audio=h("audio",{class:"ep-stream",preload:"none",src}),toggle=h("button",{class:"player-toggle",type:"button","aria-label":"Play episode"},"▶"),seek=h("input",{class:"player-seek",type:"range",min:"0",max:"1000",value:"0","aria-label":"Seek episode"}),time=h("span",{class:"player-time"},"0:00 / --:--"),status=h("span",{class:"player-status","aria-live":"polite"},"Ready"),speed=h("button",{class:"player-speed",type:"button","aria-label":"Playback speed 1×"},"1×");
   audio.hidden=true;
   const meta=h("div",{class:"player-meta"},time,status),main=h("div",{class:"player-main"},seek,meta),player=h("div",{class:"custom-player"},audio,toggle,main,speed),rates=[1,1.25,1.5,2];
@@ -226,7 +238,7 @@ function playerFor(id){
   toggle.onclick=()=>{if(audio.paused)audio.play().catch(()=>{status.textContent="Unable to play audio"});else audio.pause()};
   seek.oninput=()=>{if(Number.isFinite(audio.duration))audio.currentTime=audio.duration*(+seek.value/1000)};
   let rateIndex=0;speed.onclick=()=>{rateIndex=(rateIndex+1)%rates.length;audio.playbackRate=rates[rateIndex];speed.textContent=rates[rateIndex]+"×";speed.setAttribute("aria-label","Playback speed "+rates[rateIndex]+"×")};
-  audio.addEventListener("loadedmetadata",sync);audio.addEventListener("durationchange",sync);audio.addEventListener("timeupdate",sync);
+  audio.addEventListener("loadedmetadata",sync);audio.addEventListener("durationchange",sync);audio.addEventListener("timeupdate",sync);bindTranscriptHighlight(audio);
   audio.addEventListener("play",()=>{toggle.textContent="Ⅱ";toggle.setAttribute("aria-label","Pause episode");status.textContent="Playing"});
   audio.addEventListener("pause",()=>{toggle.textContent="▶";toggle.setAttribute("aria-label","Play episode");if(!audio.ended)status.textContent="Paused"});
   audio.addEventListener("ended",()=>{toggle.textContent="↻";toggle.setAttribute("aria-label","Replay episode");status.textContent="Finished"});
@@ -248,6 +260,19 @@ function transcriptParagraphs(value){
   }
   return paragraphs;
 }
+function transcriptView(episode){
+  if(FEATURES.transcript===false||!episode.transcript)return null;
+  const timed=(Array.isArray(episode.transcriptWords)?episode.transcriptWords:[]).filter(word=>word&&String(word.word||"").trim()&&Number.isFinite(Number(word.start))&&Number.isFinite(Number(word.end))&&Number(word.start)>=0&&Number(word.end)>=Number(word.start));
+  let paragraphs;
+  if(timed.length){
+    paragraphs=[];
+    for(let i=0;i<timed.length;i+=36){
+      const spans=timed.slice(i,i+36).map(word=>h("span",{class:"transcript-word","data-start":Number(word.start),"data-end":Number(word.end),onclick:event=>{const audio=event.currentTarget.closest("article")?.querySelector("audio");if(audio){audio.currentTime=Number(word.start);audio.play().catch(()=>{})}}},String(word.word).trim()+" "));
+      paragraphs.push(h("p",null,...spans));
+    }
+  }else paragraphs=transcriptParagraphs(episode.transcript).map(paragraph=>h("p",null,paragraph));
+  return h("details",{class:"transcript"},h("summary",null,timed.length?"Follow along with transcript":"Read transcript"),h("div",{class:"transcript-text"},...paragraphs));
+}
 function render(){
   const units=["All",...new Set(eps.map(e=>e.unit).filter(Boolean))];
   if(!units.includes(filter))filter="All";
@@ -262,7 +287,7 @@ function render(){
       h("div",{class:"meta"},h("span",{class:"num"},"EP "+e.num),h("span",{class:"eq"},h("i"),h("i"),h("i")),e.unit?h("span",{class:"tag"},e.unit):null,h("span",null,fmt(e.date)),
         e.rant?h("span",{class:"rant"},"Rant level ",...Array.from({length:Math.min(5,Math.max(1,e.rant))},(_,i)=>h("span",{class:"fl",style:"animation-delay:"+(i*.18)+"s"},"\u{1F525}"))):null),
       h("h3",null,e.title),e.desc?h("p",null,e.desc):null,
-      FEATURES.transcript!==false&&e.transcript?h("details",{class:"transcript"},h("summary",null,"Read transcript"),h("div",{class:"transcript-text"},...transcriptParagraphs(e.transcript).map(paragraph=>h("p",null,paragraph)))):null,
+      transcriptView(e),
       playerFor(e.id));
     if(adminPw&&FEATURES.episodeDeletion!==false)c.append(h("button",{class:"del",onclick:()=>del(e)},"Delete"));
     list.append(c);

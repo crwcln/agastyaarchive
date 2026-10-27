@@ -73,24 +73,28 @@ async function handle(context) {
     const geminiFile = fileResult.file;
     try {
       const model = env.GEMINI_TRANSCRIBE_MODEL || "gemini-3.5-transcribe";
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ fileData: { fileUri: geminiFile.uri, mimeType: geminiFile.mimeType || mime } }] }], generationConfig: { audioTranscriptionConfig: { mode: "SMART", customVocabulary: ["Agastya", "The Agastya Archive"] } } }) });
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ fileData: { fileUri: geminiFile.uri, mimeType: geminiFile.mimeType || mime } }, { text: "Transcribe the speech and include word-level timestamps. The host's name is Agastya (spelled A-g-a-s-t-y-a); use that spelling when the name is spoken." }] }], generationConfig: { audioTranscriptionConfig: { wordTimestamp: true } } }) });
       let result = {}; try { result = await response.json(); } catch {}
       if (!response.ok) return json({ error: result.error?.message || `Gemini transcription failed (HTTP ${response.status}).` }, 502);
-      const candidate = result.candidates?.[0];
-      const transcriptParts = (candidate?.content?.parts || []).map(part => {
-        if (part.text) return part.text;
+      const candidate = result.candidates?.[0], partsOut = result.candidates?.flatMap(item => item.content?.parts || []) || [];
+      const toSeconds = value => {
+        if (typeof value === "number") return Number.isFinite(value) ? value : null;
+        const match = String(value || "").match(/^(-?\d+(?:\.\d+)?)(ms|s)?$/i);
+        if (!match) return null;
+        const number = Number(match[1]); return match[2]?.toLowerCase() === "ms" ? number / 1000 : number;
+      };
+      const words = partsOut.flatMap(part => {
         const transcription = part.audioTranscription || part.audio_transcription;
-        if (transcription?.text) return transcription.text;
-        const words = transcription?.words || [];
-        return words.map(item => item.word || "").filter(Boolean).join(" ");
-      }).filter(Boolean);
-      const transcript = [...transcriptParts, result.text || result.output_text || ""].join("\n").trim();
+        return (transcription?.words || []).map(item => ({ word: String(item.word || "").trim(), start: toSeconds(item.startOffset ?? item.start_offset), end: toSeconds(item.endOffset ?? item.end_offset) })).filter(item => item.word && item.start !== null && item.end !== null && item.end >= item.start);
+      }).slice(0, 30000);
+      const transcriptParts = partsOut.map(part => part.text || "").filter(Boolean);
+      const transcript = [...transcriptParts, result.text || result.output_text || ""].join("\n").trim() || words.map(item => item.word).join(" ");
       if (!transcript) {
         const reason = candidate?.finishReason || candidate?.finish_reason || result.promptFeedback?.blockReason || result.prompt_feedback?.block_reason;
-        const detail = reason && reason !== "STOP" ? ` Gemini response status: ${reason}.` : " Gemini returned neither text nor word-level transcription data.";
+        const detail = reason && reason !== "STOP" ? ` Gemini response status: ${reason}.` : " Gemini returned neither transcript text nor word-level timing data.";
         return json({ error: `Gemini returned an empty transcript.${detail} Check that the audio contains audible speech and is in a supported audio format.` }, 502);
       }
-      return json({ transcript });
+      return json({ transcript, words });
     } finally {
       if (geminiFile.name) fetch(`https://generativelanguage.googleapis.com/v1beta/${geminiFile.name}`, { method: "DELETE", headers: { "x-goog-api-key": env.GEMINI_API_KEY } }).catch(() => {});
     }
@@ -163,6 +167,7 @@ async function handle(context) {
       rant: Math.min(5, Math.max(1, +e.rant || 3)),
       desc: String(e.desc || "").trim().slice(0, 5000),
       transcript: String(e.transcript || "").trim().slice(0, 200000),
+      transcriptWords: Array.isArray(e.transcriptWords) ? e.transcriptWords.slice(0, 30000).map(word => ({ word: String(word.word || "").slice(0, 100), start: Number(word.start), end: Number(word.end) })).filter(word => word.word && Number.isFinite(word.start) && Number.isFinite(word.end) && word.start >= 0 && word.end >= word.start) : [],
       publishAt: requestedPublishAt ? new Date(publishTime).toISOString() : null,
       size, chunks, type: /^audio\/[\w.+-]+$/.test(e.type) ? e.type : "audio/webm",
     };

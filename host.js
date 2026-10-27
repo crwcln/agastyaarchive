@@ -62,7 +62,7 @@ UNITS.forEach(u=>$("hpunit").append(new Option(u,u)));
 [1,2,3,4,5].forEach(n=>$("hprant").append(new Option("\u{1F525}".repeat(n),n,false,n===4)));
 $("hpdate").value=new Date().toISOString().slice(0,10);
 
-let pw=sessionStorage.getItem("hp_pw")||"",stream,rec,chunks=[],blob=null,uploadId=null,uploadedBlob=null,uploadedParts=0,t0=0,acc=0,tick=null;
+let pw=sessionStorage.getItem("hp_pw")||"",stream,rec,chunks=[],blob=null,transcriptWords=[],uploadId=null,uploadedBlob=null,uploadedParts=0,t0=0,acc=0,tick=null;
 const msg=t=>$("hpmsg").textContent=t;
 const fmtT=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 const elapsed=()=>acc+(rec&&rec.state==="recording"?(Date.now()-t0)/1000:0);
@@ -124,7 +124,7 @@ if(pw)unlock(pw);
 
 const open=v=>{panel.classList.toggle("open",v);if(v)setTimeout(()=>{const t=$("hplock").hidden?$("hptitle"):$("hppw");t.focus()},300)};
 const live=on=>{$("hpdot").classList.toggle("live",on);$("hpstart").disabled=on;$("hppause").disabled=!on;$("hpstop").disabled=!on;$("hppause").textContent="Pause"};
-function setAudio(b){if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);$("hpprev").hidden=false;msg((b.size/1048576).toFixed(1)+" MB ready.")}
+function setAudio(b){transcriptWords=[];if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);$("hpprev").hidden=false;msg((b.size/1048576).toFixed(1)+" MB ready.")}
 
 $("hpstart").onclick=async()=>{
   try{
@@ -143,11 +143,12 @@ $("hppause").onclick=()=>{
 $("hpstop").onclick=()=>{acc=elapsed();rec.stop()};
 $("hpfile").onchange=e=>{const f=e.target.files[0];if(f)setAudio(f)};
 $("hpschedrefresh").onclick=loadScheduled;
+$("hptr").oninput=()=>{transcriptWords=[]};
 $("hptranscribe").onclick=async()=>{
   const btn=$("hptranscribe"),prog=$("hpprog"),status=$("hptranscribeStatus");
   if(!blob){status.textContent="Choose or record an audio file first.";status.dataset.error="true";msg(status.textContent);return}
   btn.disabled=true;prog.hidden=false;prog.value=0;status.textContent="Preparing audio upload...";delete status.dataset.error;
-  try{const upload=await ensureUploaded();status.textContent="Sending audio to Gemini for transcription...";const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});$("hptr").value=result.transcript||"";status.textContent="Transcript ready. Review it before publishing.";msg(status.textContent)}
+  try{const upload=await ensureUploaded();status.textContent="Sending audio to Gemini for transcription...";const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});$("hptr").value=result.transcript||"";transcriptWords=Array.isArray(result.words)?result.words:[];status.textContent="Transcript ready. Review it before publishing.";msg(status.textContent)}
   catch(e){status.textContent="Transcription failed: "+e.message;status.dataset.error="true";msg(status.textContent)}
   finally{btn.disabled=false;prog.hidden=true}
 };
@@ -173,7 +174,7 @@ $("hpdescribe").onclick=async()=>{
   const btn=$("hpdescribe"),status=$("hpdescribeStatus");btn.disabled=true;delete status.dataset.error;
   try{
     let transcript=$("hptr").value.trim();
-    if(!transcript&&blob){status.textContent="Transcribing audio first...";const upload=await ensureUploaded();const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});transcript=String(result.transcript||"").trim();$("hptr").value=transcript}
+    if(!transcript&&blob){status.textContent="Transcribing audio first...";const upload=await ensureUploaded();const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});transcript=String(result.transcript||"").trim();$("hptr").value=transcript;transcriptWords=Array.isArray(result.words)?result.words:[]}
     if(!transcript)throw new Error("Choose audio or add a transcript first.");
     status.textContent="Generating description with Gemini...";
     const result=await api({action:"describe",title:$("hptitle").value,unit:$("hpunit").value,transcript});
@@ -194,9 +195,9 @@ msg("Preparing upload…");
     const {id,parts}=await ensureUploaded();
     msg("Publishing…");
     const publishAt=$("hpwhen").value?new Date($("hpwhen").value).toISOString():null;
-    const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,publishAt,rant:+$("hprant").value,desc:$("hpdesc").value,transcript:$("hptr").value,size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
+    const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,publishAt,rant:+$("hprant").value,desc:$("hpdesc").value,transcript:$("hptr").value,transcriptWords,size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
     if(res.episode.publishAt)msg("Episode "+res.episode.num+" scheduled for "+new Date(res.episode.publishAt).toLocaleString());else msg("Live! Episode "+res.episode.num+" is published.");
-    blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").hidden=true;$("hpprev").removeAttribute("src");$("hptime").textContent="0:00";["hptitle","hpdesc","hptr","hpscript","hpfile","hpwhen"].forEach(k=>$(k).value="");$("hpscriptStatus").textContent="";
+    blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").hidden=true;$("hpprev").removeAttribute("src");$("hptime").textContent="0:00";["hptitle","hpdesc","hptr","hpscript","hpfile","hpwhen"].forEach(k=>$(k).value="");transcriptWords=[];$("hpscriptStatus").textContent="";
     window.loadEpisodes&&window.loadEpisodes();loadScheduled();
   }catch(e){msg("Failed: "+e.message)}
   btn.disabled=false;prog.hidden=true;
