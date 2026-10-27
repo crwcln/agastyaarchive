@@ -25,7 +25,7 @@ const css=`
 #hp button:disabled{opacity:.4;cursor:default}
 #hp .go{background:var(--accent);border-color:var(--accent);color:var(--btn)}
 #hp audio{width:100%;margin-top:12px}
-#hp .acts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px}#hp .schedule-row{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}#hp .schedule-head{display:flex;justify-content:space-between;align-items:center;gap:10px}#hp .schedule-head h3{font:700 17px 'Space Grotesk',sans-serif}#hp .schedule-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}#hp .schedule-info{min-width:0}#hp .schedule-info b{display:block;overflow-wrap:anywhere}#hp .schedule-info span{display:block;color:var(--mute);font-size:12px}#hp .schedule-item input{grid-column:1/-1}#hp .schedule-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}#hp .schedule-actions button{font-size:12px;padding:6px 9px}
+#hp .acts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px}#hp .script-generator{margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}#hp .script-generator h3{font:700 17px 'Space Grotesk',sans-serif}#hp .script-generator .r2{grid-template-columns:repeat(3,minmax(0,1fr))}#hp .script-generator textarea{min-height:300px;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}#hp .schedule-row{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}#hp .schedule-head{display:flex;justify-content:space-between;align-items:center;gap:10px}#hp .schedule-head h3{font:700 17px 'Space Grotesk',sans-serif}#hp .schedule-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}#hp .schedule-info{min-width:0}#hp .schedule-info b{display:block;overflow-wrap:anywhere}#hp .schedule-info span{display:block;color:var(--mute);font-size:12px}#hp .schedule-item input{grid-column:1/-1}#hp .schedule-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}#hp .schedule-actions button{font-size:12px;padding:6px 9px}
 #hp progress{width:100%;margin-top:12px}
 #hpmsg{font-size:14px;color:var(--mute)}
 .del{position:absolute;top:14px;right:14px;font-size:12px;padding:3px 8px;color:var(--mute)}
@@ -43,9 +43,10 @@ panel.innerHTML=`<div class="in">
 <button id="hpstart">● Record</button><button id="hppause" disabled>Pause</button><button id="hpstop" disabled>Stop</button></div>
 <label>…or choose an existing audio file</label><input type="file" id="hpfile" accept="audio/*">
 <audio id="hpprev" controls hidden></audio>
-<div class="r2"><div><label>Date</label><input id="hpdate" type="date"></div><div><label>Rant level</label><select id="hprant"></select></div></div><div id="publishScheduleField"><label for="hpwhen">Publish date and time (leave empty to publish now)</label><input id="hpwhen" type="datetime-local"></div>
+<label>Date</label><input id="hpdate" type="date"><div id="publishScheduleField"><label for="hpwhen">Publish date and time (leave empty to publish now)</label><input id="hpwhen" type="datetime-local"></div>
 <label>Title</label><input id="hptitle" placeholder="e.g. The Mongols Were NOT Just Raiders">
 <label>Unit</label><select id="hpunit"></select>
+<section id="scriptGenerator" class="script-generator"><div class="schedule-head"><h3>Script generator</h3><span class="note">Host-only draft</span></div><div class="r2"><div><label for="hpscriptTime">Length</label><select id="hpscriptTime"><option value="3">3 minutes</option><option value="5" selected>5 minutes</option><option value="8">8 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option></select></div><div><label for="hpscriptTone">Tone</label><select id="hpscriptTone"><option value="Energetic and conversational">Energetic and conversational</option><option value="Dryly funny">Dryly funny</option><option value="Dramatic storytelling">Dramatic storytelling</option><option value="Clear and classroom-friendly">Clear and classroom-friendly</option><option value="Sharp and argumentative">Sharp and argumentative</option></select></div><div><label for="hprant">Rant level</label><select id="hprant"></select></div></div><div class="acts"><button type="button" id="hpscriptGenerate" class="go">Generate script with AI</button><button type="button" id="hpscriptCopy">Copy script</button></div><div id="hpscriptStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpscript" placeholder="Your episode script will appear here. You can edit or copy it; it is not published with the episode."></textarea></section>
 <div class="field-head"><label for="hpdesc">The rant (description)</label><button type="button" id="hpdescribe">Generate with AI</button></div><div id="hpdescribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpdesc" placeholder="A short episode description"></textarea><div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><div id="hptranscribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div>
 <progress id="hpprog" max="100" value="0" hidden></progress>
 <div class="acts"><button class="go" id="hppub">Publish episode</button><span id="hpmsg"></span></div><div class="schedule-row"><div class="schedule-head"><h3>Scheduled episodes</h3><button type="button" id="hpschedrefresh">Refresh</button></div><div id="hpscheduled" class="note">Unlock to load scheduled episodes.</div></div>
@@ -53,6 +54,7 @@ panel.innerHTML=`<div class="in">
 document.body.append(panel);
 const $=id=>panel.querySelector("#"+id),FEATURES=(window.SITE_CONFIG&&window.SITE_CONFIG.features)||{};
 if(FEATURES.aiDescription!==true)$("hpdescribe").hidden=true;
+if(FEATURES.scriptGenerator!==true)$("scriptGenerator").hidden=true;
 if(FEATURES.transcribeAudio!==true)$("hptranscribe").hidden=true;
 if(FEATURES.transcript===false)$("transcriptField").hidden=true;
 if(FEATURES.episodeScheduling===false){$("hpscheduled").parentElement.hidden=true;$("publishScheduleField").hidden=true}
@@ -149,6 +151,24 @@ $("hptranscribe").onclick=async()=>{
   catch(e){status.textContent="Transcription failed: "+e.message;status.dataset.error="true";msg(status.textContent)}
   finally{btn.disabled=false;prog.hidden=true}
 };
+$("hpscriptGenerate").onclick=async()=>{
+  const btn=$("hpscriptGenerate"),status=$("hpscriptStatus"),title=$("hptitle").value.trim();
+  delete status.dataset.error;
+  if(!title){status.textContent="Add an episode title or topic first.";status.dataset.error="true";return}
+  btn.disabled=true;status.textContent="Generating your script with Gemini...";
+  try{
+    const result=await api({action:"generate-script",title,unit:$("hpunit").value,minutes:+$("hpscriptTime").value,tone:$("hpscriptTone").value,rant:+$("hprant").value,description:$("hpdesc").value.trim()});
+    if(!result.script)throw new Error("Gemini returned no script.");
+    $("hpscript").value=result.script;status.textContent="Script ready. Edit it or copy it for recording."
+  }catch(e){status.textContent="Script generation failed: "+e.message;status.dataset.error="true"}
+  finally{btn.disabled=false}
+};
+$("hpscriptCopy").onclick=async()=>{
+  const status=$("hpscriptStatus"),script=$("hpscript").value.trim();
+  if(!script){status.textContent="Generate a script before copying.";status.dataset.error="true";return}
+  try{await navigator.clipboard.writeText(script);status.textContent="Script copied to clipboard.";delete status.dataset.error}
+  catch(e){$("hpscript").select();status.textContent="Select and copy the highlighted script.";status.dataset.error="false"}
+};
 $("hpdescribe").onclick=async()=>{
   const btn=$("hpdescribe"),status=$("hpdescribeStatus");btn.disabled=true;delete status.dataset.error;
   try{
@@ -176,7 +196,7 @@ msg("Preparing upload…");
     const publishAt=$("hpwhen").value?new Date($("hpwhen").value).toISOString():null;
     const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,publishAt,rant:+$("hprant").value,desc:$("hpdesc").value,transcript:$("hptr").value,size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
     if(res.episode.publishAt)msg("Episode "+res.episode.num+" scheduled for "+new Date(res.episode.publishAt).toLocaleString());else msg("Live! Episode "+res.episode.num+" is published.");
-    blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").hidden=true;$("hpprev").removeAttribute("src");$("hptime").textContent="0:00";["hptitle","hpdesc","hptr","hpfile","hpwhen"].forEach(k=>$(k).value="");
+    blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").hidden=true;$("hpprev").removeAttribute("src");$("hptime").textContent="0:00";["hptitle","hpdesc","hptr","hpscript","hpfile","hpwhen"].forEach(k=>$(k).value="");$("hpscriptStatus").textContent="";
     window.loadEpisodes&&window.loadEpisodes();loadScheduled();
   }catch(e){msg("Failed: "+e.message)}
   btn.disabled=false;prog.hidden=true;

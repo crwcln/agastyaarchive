@@ -96,6 +96,24 @@ async function handle(context) {
     }
   }
 
+  if (b.action === "generate-script") {
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const title = String(b.title || "").trim().slice(0, 200), unit = String(b.unit || "").trim().slice(0, 100);
+    const minutes = Number(b.minutes), rant = Number(b.rant), tones = ["Energetic and conversational", "Dryly funny", "Dramatic storytelling", "Clear and classroom-friendly", "Sharp and argumentative"];
+    const tone = tones.includes(b.tone) ? b.tone : "Energetic and conversational";
+    if (!title) return json({ error: "Add an episode title or topic first." }, 400);
+    if (![3, 5, 8, 10, 15, 20].includes(minutes)) return json({ error: "Choose a script length from 3 to 20 minutes." }, 400);
+    if (!Number.isInteger(rant) || rant < 1 || rant > 5) return json({ error: "Choose a rant level from 1 to 5." }, 400);
+    const targetWords = minutes * 135;
+    const input = `Write a ready-to-record podcast script for The Agastya Archive, an AP World History show. Topic/title: ${title}. Course unit: ${unit || "not specified"}. Target length: about ${minutes} minutes at a natural speaking pace, roughly ${targetWords} words. Tone: ${tone}. Rant level: ${rant}/5, where 1 is lightly opinionated and 5 is a fiery, funny rant. Keep criticism aimed at historical choices, systems, and arguments, never at people based on identity. Give the script a strong opening hook, clear transitions, accurate historical context, and a memorable closing. Use spoken language, occasional concise delivery cues in brackets, and paragraphs that are easy to read aloud. Do not invent quotations, sources, or facts; avoid unsupported certainty and explain nuance where needed. Return only the script. Context from the host, if any: ${String(b.description || "").trim().slice(0, 2000)}`;
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input }) });
+    let result = {}; try { result = await response.json(); } catch {}
+    if (!response.ok) return json({ error: result.error?.message || `Gemini script generation failed (HTTP ${response.status}).` }, 502);
+    const script = (result.outputs || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
+    if (!script) return json({ error: "Gemini returned no script." }, 502);
+    return json({ script: script.slice(0, 50000) });
+  }
+
   if (b.action === "describe") {
     if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
     const transcript = String(b.transcript || "").trim();
