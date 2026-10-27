@@ -110,7 +110,7 @@ async function handle(context) {
     if (!Number.isInteger(rant) || rant < 1 || rant > 5) return json({ error: "Choose a rant level from 1 to 5." }, 400);
     const targetWords = minutes * 135;
     const input = "Write a ready-to-record podcast script for The Agastya Archive, an AP World History show. Topic/title: " + title + ". Course unit: " + (unit || "not specified") + ". Target length: about " + minutes + " minutes at a natural speaking pace, roughly " + targetWords + " words. Tone: " + tone + ". Rant level: " + rant + "/5, where 1 is lightly opinionated and 5 is a fiery, funny rant. Keep criticism aimed at historical choices, systems, and arguments, never at people based on identity. Give the script a strong opening hook, clear transitions, accurate historical context, and a memorable closing. Use spoken language, occasional concise delivery cues in brackets, and paragraphs that are easy to read aloud. Do not invent quotations, sources, or facts; avoid unsupported certainty and explain nuance where needed. Return only the script. Context from the host, if any: " + String(b.description || "").trim().slice(0, 2000);
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: false }) });
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: true }) });
     let result = {}; try { result = await response.json(); } catch {}
     if (!response.ok) return json({ error: result.error?.message || "Gemini script generation failed (HTTP " + response.status + ")." }, 502);
     const interactionId = result.id || result.interaction?.id;
@@ -130,6 +130,50 @@ async function handle(context) {
     if (status === "completed" && !script) return json({ error: "Gemini completed the request without returning a script.", status });
     if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: result.error?.message || "Gemini generation ended with status: " + status + ".", status });
     return json({ status, ...(status === "completed" ? { script: script.slice(0, 50000) } : {}) });
+  }
+
+  if (b.action === "generate-chapters") {
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const title = String(b.title || "").trim().slice(0, 200), unit = String(b.unit || "").trim().slice(0, 100);
+    const duration = Number(b.duration), segments = Array.isArray(b.segments) ? b.segments.slice(0, 600) : [];
+    if (!title) return json({ error: "Add an episode title before generating chapters." }, 400);
+    if (!(duration > 0 && duration <= 24 * 60 * 60) || !segments.length) return json({ error: "A transcript with timestamps is required to generate chapters." }, 400);
+    const context = segments.map(segment => {
+      const time = Number(segment.time), text = String(segment.text || "").trim().slice(0, 1200);
+      if (!Number.isFinite(time) || time < 0 || time > duration || !text) return "";
+      return "[" + Math.floor(time / 60) + ":" + String(Math.floor(time % 60)).padStart(2, "0") + "] " + text;
+    }).filter(Boolean).join("\n").slice(0, 80000);
+    if (!context) return json({ error: "No usable timestamped transcript segments were provided." }, 400);
+    const example = JSON.stringify({ chapters: [{ time: 0, title: "Introduction" }] });
+    const input = "Create useful podcast chapters from the timestamped transcript below. Return only valid JSON in this shape: " + example + ". Include an opening chapter at or near 0 seconds, then add a chapter when the subject meaningfully changes, usually every 2 to 5 minutes. Use concise, specific titles, no more than 10 words each. Times must be seconds from the start and within the recording duration of " + Math.round(duration) + " seconds. Do not invent topics. Episode: " + title + ". AP World unit: " + unit + ". Timestamped transcript:\n" + context;
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: true }) });
+    let result = {}; try { result = await response.json(); } catch {}
+    if (!response.ok) return json({ error: result.error?.message || "Gemini chapter generation failed (HTTP " + response.status + ")." }, 502);
+    const interactionId = result.id || result.interaction?.id;
+    if (!interactionId) return json({ error: "Gemini did not return a chapter-generation ID." }, 502);
+    return json({ interactionId, status: result.status || "in_progress" });
+  }
+
+  if (b.action === "chapter-status") {
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const id = String(b.id || ""), duration = Number(b.duration);
+    if (!/^[A-Za-z0-9_-]{10,200}$/.test(id)) return json({ error: "Bad chapter generation ID." }, 400);
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions/" + encodeURIComponent(id), { headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Api-Revision": "2026-05-20" } });
+    let result = {}; try { result = await response.json(); } catch {}
+    if (!response.ok) return json({ error: result.error?.message || "Gemini chapter status failed (HTTP " + response.status + ")." }, 502);
+    const status = String(result.status || "in_progress");
+    if (status !== "completed") {
+      if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: result.error?.message || "Gemini chapter generation ended with status: " + status + ".", status });
+      return json({ status });
+    }
+    const output = (result.steps || []).filter(step => step.type === "model_output").flatMap(step => step.content || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
+    const cleaned = output.replace(/^\x60{3}(?:json)?\s*/i, "").replace(/\s*\x60{3}\s*$/, "");
+    let parsed;
+    try { parsed = JSON.parse(cleaned); } catch { return json({ error: "Gemini returned chapter data that was not valid JSON." }, 502); }
+    const chapters = (Array.isArray(parsed.chapters) ? parsed.chapters : []).map(chapter => ({ time: Number(chapter.time), title: String(chapter.title || "").trim().slice(0, 100) })).filter(chapter => Number.isFinite(chapter.time) && chapter.time >= 0 && chapter.time <= duration && chapter.title).sort((a, b) => a.time - b.time).slice(0, 50);
+    if (!chapters.length) return json({ error: "Gemini returned no usable chapters." }, 502);
+    if (chapters[0].time > 10) chapters.unshift({ time: 0, title: "Introduction" });
+    return json({ status, chapters });
   }
 
   if (b.action === "describe") {
@@ -182,6 +226,7 @@ async function handle(context) {
       desc: String(e.desc || "").trim().slice(0, 5000),
       transcript: String(e.transcript || "").trim().slice(0, 200000),
       transcriptWords: Array.isArray(e.transcriptWords) ? e.transcriptWords.slice(0, 30000).map(word => ({ word: String(word.word || "").slice(0, 100), start: Number(word.start), end: Number(word.end) })).filter(word => word.word && Number.isFinite(word.start) && Number.isFinite(word.end) && word.start >= 0 && word.end >= word.start) : [],
+      chapters: Array.isArray(e.chapters) ? e.chapters.slice(0, 50).map(chapter => ({ time: Number(chapter.time), title: String(chapter.title || "").trim().slice(0, 100) })).filter(chapter => Number.isFinite(chapter.time) && chapter.time >= 0 && chapter.title).sort((a, b) => a.time - b.time) : [],
       publishAt: requestedPublishAt ? new Date(publishTime).toISOString() : null,
       size, chunks, type: /^audio\/[\w.+-]+$/.test(e.type) ? e.type : "audio/webm",
     };

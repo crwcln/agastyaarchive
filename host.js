@@ -25,7 +25,7 @@ const css=`
 #hp button:disabled{opacity:.4;cursor:default}
 #hp .go{background:var(--accent);border-color:var(--accent);color:var(--btn)}
 #hp audio{width:100%;margin-top:12px}
-#hp .acts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px}#hp .script-generator{margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}#hp .script-generator h3{font:700 17px 'Space Grotesk',sans-serif}#hp .script-generator .r2{grid-template-columns:repeat(3,minmax(0,1fr))}#hp .script-generator textarea{min-height:300px;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}#hp .schedule-row{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}#hp .schedule-head{display:flex;justify-content:space-between;align-items:center;gap:10px}#hp .schedule-head h3{font:700 17px 'Space Grotesk',sans-serif}#hp .schedule-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}#hp .schedule-info{min-width:0}#hp .schedule-info b{display:block;overflow-wrap:anywhere}#hp .schedule-info span{display:block;color:var(--mute);font-size:12px}#hp .schedule-item input{grid-column:1/-1}#hp .schedule-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}#hp .schedule-actions button{font-size:12px;padding:6px 9px}
+#hp .acts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px}#hp .script-generator{margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}#hp .script-generator h3{font:700 17px 'Space Grotesk',sans-serif}#hp .script-generator .r2{grid-template-columns:repeat(3,minmax(0,1fr))}#hp .script-generator textarea{min-height:300px;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}#hp .chapter-options{display:flex;align-items:center;gap:8px;margin:12px 0;color:var(--mute);font-size:13px}#hp .chapter-options input{width:auto}#hp #hpchapters{min-height:120px;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}#hp .schedule-row{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}#hp .schedule-head{display:flex;justify-content:space-between;align-items:center;gap:10px}#hp .schedule-head h3{font:700 17px 'Space Grotesk',sans-serif}#hp .schedule-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}#hp .schedule-info{min-width:0}#hp .schedule-info b{display:block;overflow-wrap:anywhere}#hp .schedule-info span{display:block;color:var(--mute);font-size:12px}#hp .schedule-item input{grid-column:1/-1}#hp .schedule-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}#hp .schedule-actions button{font-size:12px;padding:6px 9px}
 #hp progress{width:100%;margin-top:12px}
 #hpmsg{font-size:14px;color:var(--mute)}
 .del{position:absolute;top:14px;right:14px;font-size:12px;padding:3px 8px;color:var(--mute)}
@@ -47,7 +47,7 @@ panel.innerHTML=`<div class="in">
 <label>Title</label><input id="hptitle" placeholder="e.g. The Mongols Were NOT Just Raiders">
 <label>Unit</label><select id="hpunit"></select>
 <section id="scriptGenerator" class="script-generator"><div class="schedule-head"><h3>Script generator</h3><span class="note">Host-only draft</span></div><div class="r2"><div><label for="hpscriptTime">Length</label><select id="hpscriptTime"><option value="3">3 minutes</option><option value="5" selected>5 minutes</option><option value="8">8 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option></select></div><div><label for="hpscriptTone">Tone</label><select id="hpscriptTone"><option value="Energetic and conversational">Energetic and conversational</option><option value="Dryly funny">Dryly funny</option><option value="Dramatic storytelling">Dramatic storytelling</option><option value="Clear and classroom-friendly">Clear and classroom-friendly</option><option value="Sharp and argumentative">Sharp and argumentative</option></select></div><div><label for="hprant">Rant level</label><select id="hprant"></select></div></div><div class="acts"><button type="button" id="hpscriptGenerate" class="go">Generate script with AI</button><button type="button" id="hpscriptCopy">Copy script</button></div><div id="hpscriptStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpscript" placeholder="Your episode script will appear here. You can edit or copy it; it is not published with the episode."></textarea></section>
-<div class="field-head"><label for="hpdesc">The rant (description)</label><button type="button" id="hpdescribe">Generate with AI</button></div><div id="hpdescribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpdesc" placeholder="A short episode description"></textarea><div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><div id="hptranscribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div>
+<div class="field-head"><label for="hpdesc">The rant (description)</label><button type="button" id="hpdescribe">Generate with AI</button></div><div id="hpdescribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpdesc" placeholder="A short episode description"></textarea><div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><div id="hptranscribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div><div id="chapterEditor"><label class="chapter-options"><input type="checkbox" id="hpautoChapters" checked> Automatically generate chapters for this recording</label><label for="hpchapters">Episode chapters (one per line: 00:00 Introduction)</label><textarea id="hpchapters" placeholder="00:00 Introduction"></textarea><div id="hpchapterStatus" class="ai-status" role="status" aria-live="polite"></div></div>
 <progress id="hpprog" max="100" value="0" hidden></progress>
 <div class="acts"><button class="go" id="hppub">Publish episode</button><span id="hpmsg"></span></div><div class="schedule-row"><div class="schedule-head"><h3>Scheduled episodes</h3><button type="button" id="hpschedrefresh">Refresh</button></div><div id="hpscheduled" class="note">Unlock to load scheduled episodes.</div></div>
 </div></div>`;
@@ -57,6 +57,7 @@ if(FEATURES.aiDescription!==true)$("hpdescribe").hidden=true;
 if(FEATURES.scriptGenerator!==true)$("scriptGenerator").hidden=true;
 if(FEATURES.transcribeAudio!==true)$("hptranscribe").hidden=true;
 if(FEATURES.transcript===false)$("transcriptField").hidden=true;
+if(FEATURES.autoChapters!==true)$("chapterEditor").hidden=true;
 if(FEATURES.episodeScheduling===false){$("hpscheduled").parentElement.hidden=true;$("publishScheduleField").hidden=true}
 UNITS.forEach(u=>$("hpunit").append(new Option(u,u)));
 [1,2,3,4,5].forEach(n=>$("hprant").append(new Option("\u{1F525}".repeat(n),n,false,n===4)));
@@ -79,6 +80,34 @@ async function api(body){
   if(!r.ok)throw new Error(d.error||(r.status===404?"API not found (HTTP 404): the cloud-functions folder isn’t deployed.":"HTTP "+r.status+(t?": "+t.slice(0,120):"")));
   if(!Object.keys(d).length)throw new Error("API returned something that isn’t JSON (functions probably aren’t deployed).");
   return d;
+}
+function chapterClock(seconds){const total=Math.max(0,Math.floor(seconds)),minutes=Math.floor(total/60),secs=String(total%60).padStart(2,"0");return minutes+":"+secs}
+function parseChapterLines(){return $("hpchapters").value.split(/\r?\n/).map(line=>{const match=line.trim().match(/^(?:(\d+):)?(\d+):(\d{2})\s+(.+)$/);if(!match)return null;const time=Number(match[1]||0)*3600+Number(match[2])*60+Number(match[3]);return {time,title:match[4].trim()}}).filter(chapter=>chapter&&chapter.title)}
+async function maybeGenerateChapters(){
+  if(FEATURES.autoChapters!==true||!$("hpautoChapters").checked)return;
+  const status=$("hpchapterStatus");
+  if(!transcriptWords.length){status.textContent="Chapters need a timestamped transcript; you can add chapters manually.";return}
+  const bucketSeconds=15,groups=new Map();
+  for(const word of transcriptWords){const time=Number(word.start),text=String(word.word||"").trim();if(!Number.isFinite(time)||!text)continue;const start=Math.floor(time/bucketSeconds)*bucketSeconds;if(!groups.has(start))groups.set(start,[]);groups.get(start).push(text)}
+  const segments=[...groups].sort((a,b)=>a[0]-b[0]).map(([time,words])=>({time,text:words.join(" ")}));
+  const duration=Number.isFinite($("hpprev").duration)&&$("hpprev").duration>0?$("hpprev").duration:Math.max(...transcriptWords.map(word=>Number(word.end)||0));
+  if(!segments.length||!duration){status.textContent="No timed transcript available for chapter generation.";return}
+  status.textContent="Generating episode chapters with Gemini...";delete status.dataset.error;
+  try{
+    const started=await api({action:"generate-chapters",title:$("hptitle").value,unit:$("hpunit").value,duration,segments});
+    if(!started.interactionId)throw new Error("Gemini did not start chapter generation.");
+    const deadline=Date.now()+8*60*1000;let result;
+    while(Date.now()<deadline){
+      await new Promise(resolve=>setTimeout(resolve,2500));
+      status.textContent="Gemini is finding chapter breaks...";
+      try{result=await api({action:"chapter-status",id:started.interactionId,duration})}catch(e){if(/HTTP 50[234]/.test(e.message))continue;throw e}
+      if(result.status==="completed")break;
+      if(result.error)throw new Error(result.error);
+    }
+    if(!result||result.status!=="completed")throw new Error("Chapter generation is taking too long. You can add chapters manually.");
+    $("hpchapters").value=(result.chapters||[]).map(chapter=>chapterClock(chapter.time)+" "+chapter.title).join("\n");
+    status.textContent=result.chapters&&result.chapters.length?result.chapters.length+" chapters ready. Review or edit them before publishing.":"No chapters were returned.";
+  }catch(e){status.textContent="Chapter generation failed: "+e.message;status.dataset.error="true"}
 }
 async function ensureUploaded(){
   if(uploadId&&uploadedBlob===blob)return {id:uploadId,parts:uploadedParts};
@@ -124,7 +153,7 @@ if(pw)unlock(pw);
 
 const open=v=>{panel.classList.toggle("open",v);if(v)setTimeout(()=>{const t=$("hplock").hidden?$("hptitle"):$("hppw");t.focus()},300)};
 const live=on=>{$("hpdot").classList.toggle("live",on);$("hpstart").disabled=on;$("hppause").disabled=!on;$("hpstop").disabled=!on;$("hppause").textContent="Pause"};
-function setAudio(b){transcriptWords=[];if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);$("hpprev").hidden=false;msg((b.size/1048576).toFixed(1)+" MB ready.")}
+function setAudio(b){transcriptWords=[];$("hpchapters").value="";$("hpchapterStatus").textContent="";if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);$("hpprev").hidden=false;msg((b.size/1048576).toFixed(1)+" MB ready.")}
 
 $("hpstart").onclick=async()=>{
   try{
@@ -148,7 +177,7 @@ $("hptranscribe").onclick=async()=>{
   const btn=$("hptranscribe"),prog=$("hpprog"),status=$("hptranscribeStatus");
   if(!blob){status.textContent="Choose or record an audio file first.";status.dataset.error="true";msg(status.textContent);return}
   btn.disabled=true;prog.hidden=false;prog.value=0;status.textContent="Preparing audio upload...";delete status.dataset.error;
-  try{const upload=await ensureUploaded();status.textContent="Sending audio to Gemini for transcription...";const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});$("hptr").value=result.transcript||"";transcriptWords=Array.isArray(result.words)?result.words:[];status.textContent="Transcript ready. Review it before publishing.";msg(status.textContent)}
+  try{const upload=await ensureUploaded();status.textContent="Sending audio to Gemini for transcription...";const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});$("hptr").value=result.transcript||"";transcriptWords=Array.isArray(result.words)?result.words:[];status.textContent="Transcript ready. Review it before publishing.";await maybeGenerateChapters();msg(status.textContent)}
   catch(e){status.textContent="Transcription failed: "+e.message;status.dataset.error="true";msg(status.textContent)}
   finally{btn.disabled=false;prog.hidden=true}
 };
@@ -186,7 +215,7 @@ $("hpdescribe").onclick=async()=>{
   const btn=$("hpdescribe"),status=$("hpdescribeStatus");btn.disabled=true;delete status.dataset.error;
   try{
     let transcript=$("hptr").value.trim();
-    if(!transcript&&blob){status.textContent="Transcribing audio first...";const upload=await ensureUploaded();const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});transcript=String(result.transcript||"").trim();$("hptr").value=transcript;transcriptWords=Array.isArray(result.words)?result.words:[]}
+    if(!transcript&&blob){status.textContent="Transcribing audio first...";const upload=await ensureUploaded();const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});transcript=String(result.transcript||"").trim();$("hptr").value=transcript;transcriptWords=Array.isArray(result.words)?result.words:[];await maybeGenerateChapters()}
     if(!transcript)throw new Error("Choose audio or add a transcript first.");
     status.textContent="Generating description with Gemini...";
     const result=await api({action:"describe",title:$("hptitle").value,unit:$("hpunit").value,transcript});
@@ -205,11 +234,21 @@ $("hppub").onclick=async()=>{
   try{
 msg("Preparing upload…");
     const {id,parts}=await ensureUploaded();
+    if(FEATURES.autoChapters===true&&$("hpautoChapters").checked&&!parseChapterLines().length){
+      if(!transcriptWords.length){
+        msg("Transcribing audio to prepare episode chapters...");
+        const transcriptResult=await api({action:"transcribe",id,parts,size:blob.size,type:blob.type});
+        $("hptr").value=transcriptResult.transcript||"";
+        transcriptWords=Array.isArray(transcriptResult.words)?transcriptResult.words:[];
+      }
+      await maybeGenerateChapters();
+      if(!parseChapterLines().length)throw new Error("Automatic chapter generation failed. Uncheck the chapter option or add chapters manually, then publish again.");
+    }
     msg("Publishing…");
     const publishAt=$("hpwhen").value?new Date($("hpwhen").value).toISOString():null;
-    const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,publishAt,rant:+$("hprant").value,desc:$("hpdesc").value,transcript:$("hptr").value,transcriptWords,size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
+    const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,publishAt,rant:+$("hprant").value,desc:$("hpdesc").value,transcript:$("hptr").value,transcriptWords,chapters:parseChapterLines(),size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
     if(res.episode.publishAt)msg("Episode "+res.episode.num+" scheduled for "+new Date(res.episode.publishAt).toLocaleString());else msg("Live! Episode "+res.episode.num+" is published.");
-    blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").hidden=true;$("hpprev").removeAttribute("src");$("hptime").textContent="0:00";["hptitle","hpdesc","hptr","hpscript","hpfile","hpwhen"].forEach(k=>$(k).value="");transcriptWords=[];$("hpscriptStatus").textContent="";
+    blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").hidden=true;$("hpprev").removeAttribute("src");$("hptime").textContent="0:00";["hptitle","hpdesc","hptr","hpscript","hpchapters","hpfile","hpwhen"].forEach(k=>$(k).value="");transcriptWords=[];$("hpscriptStatus").textContent="";
     window.loadEpisodes&&window.loadEpisodes();loadScheduled();
   }catch(e){msg("Failed: "+e.message)}
   btn.disabled=false;prog.hidden=true;

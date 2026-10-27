@@ -1,6 +1,6 @@
 // Update version when deploying site changes. Set a feature to false to disable it.
 window.SITE_CONFIG = {
-  version: "1.3.9",
+  version: "1.4.1",
   features: {
     updateNotices: true,
     autoReloadOnUpdate: true,
@@ -10,6 +10,7 @@ window.SITE_CONFIG = {
     episodeDeletion: true,
     customAudioPlayer: true,
     transcript: true,
+    autoChapters: true,
     episodeScheduling: true,
     aiDescription: true,
     scriptGenerator: true,
