@@ -7,6 +7,16 @@ const CHUNK = 2 * 1024 * 1024, MAX_CHUNKS = 500;
 const pad = i => String(i).padStart(5, "0");
 const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length === y.length && timingSafeEqual(x, y); };
+const interactionFailure = result => {
+  const message = value => typeof value === "string" ? value : value && typeof value === "object" ? String(value.message || value.detail || value.description || "") : "";
+  const details = [result.error, result.error_message, result.errorMessage, result.last_error, result.lastError, result.failure_reason, result.failureReason, result.status_details, result.message].map(message).filter(Boolean);
+  for (const step of result.steps || []) {
+    if (step.type !== "error" && !step.error && step.status !== "failed") continue;
+    const detail = message(step.error) || (step.content || []).filter(item => item.type === "text").map(item => item.text || "").join(" ");
+    if (detail) details.push(detail);
+  }
+  return [...new Set(details)].join(" ").slice(0, 1200);
+};
 
 async function handle(context) {
   const { request } = context, env = context.env || {};
@@ -110,7 +120,7 @@ async function handle(context) {
     if (!Number.isInteger(rant) || rant < 1 || rant > 5) return json({ error: "Choose a rant level from 1 to 5." }, 400);
     const targetWords = minutes * 135;
     const input = "Write a ready-to-record podcast script for The Agastya Archive, an AP World History show. Topic/title: " + title + ". Course unit: " + (unit || "not specified") + ". Target length: about " + minutes + " minutes at a natural speaking pace, roughly " + targetWords + " words. Tone: " + tone + ". Rant level: " + rant + "/5, where 1 is lightly opinionated and 5 is a fiery, funny rant. Keep criticism aimed at historical choices, systems, and arguments, never at people based on identity. Give the script a strong opening hook, clear transitions, accurate historical context, and a memorable closing. Use spoken language, occasional concise delivery cues in brackets, and paragraphs that are easy to read aloud. Do not invent quotations, sources, or facts; avoid unsupported certainty and explain nuance where needed. Return only the script. Context from the host, if any: " + String(b.description || "").trim().slice(0, 2000);
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: true }) });
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: true, generation_config: { thinking_level: "low", max_output_tokens: 8192 } }) });
     let result = {}; try { result = await response.json(); } catch {}
     if (!response.ok) return json({ error: result.error?.message || "Gemini script generation failed (HTTP " + response.status + ")." }, 502);
     const interactionId = result.id || result.interaction?.id;
@@ -128,7 +138,7 @@ async function handle(context) {
     const status = String(result.status || "in_progress");
     const script = (result.steps || []).filter(step => step.type === "model_output").flatMap(step => step.content || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
     if (status === "completed" && !script) return json({ error: "Gemini completed the request without returning a script.", status });
-    if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: result.error?.message || "Gemini generation ended with status: " + status + ".", status });
+    if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: "Gemini generation ended with status: " + status + ". " + (interactionFailure(result) || "Gemini did not provide a failure detail.") + " (Interaction " + id + ")", status });
     return json({ status, ...(status === "completed" ? { script: script.slice(0, 50000) } : {}) });
   }
 
@@ -146,7 +156,7 @@ async function handle(context) {
     if (!context) return json({ error: "No usable timestamped transcript segments were provided." }, 400);
     const example = JSON.stringify({ chapters: [{ time: 0, title: "Introduction" }] });
     const input = "Create useful podcast chapters from the timestamped transcript below. Return only valid JSON in this shape: " + example + ". Include an opening chapter at or near 0 seconds, then add a chapter when the subject meaningfully changes, usually every 2 to 5 minutes. Use concise, specific titles, no more than 10 words each. Times must be seconds from the start and within the recording duration of " + Math.round(duration) + " seconds. Do not invent topics. Episode: " + title + ". AP World unit: " + unit + ". Timestamped transcript:\n" + context;
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: true }) });
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: true, generation_config: { thinking_level: "low", max_output_tokens: 4096 } }) });
     let result = {}; try { result = await response.json(); } catch {}
     if (!response.ok) return json({ error: result.error?.message || "Gemini chapter generation failed (HTTP " + response.status + ")." }, 502);
     const interactionId = result.id || result.interaction?.id;
@@ -163,7 +173,7 @@ async function handle(context) {
     if (!response.ok) return json({ error: result.error?.message || "Gemini chapter status failed (HTTP " + response.status + ")." }, 502);
     const status = String(result.status || "in_progress");
     if (status !== "completed") {
-      if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: result.error?.message || "Gemini chapter generation ended with status: " + status + ".", status });
+      if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: "Gemini chapter generation ended with status: " + status + ". " + (interactionFailure(result) || "Gemini did not provide a failure detail.") + " (Interaction " + id + ")", status });
       return json({ status });
     }
     const output = (result.steps || []).filter(step => step.type === "model_output").flatMap(step => step.content || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
