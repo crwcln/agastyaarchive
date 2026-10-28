@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dashboard · Agastya Archive Host</title>
+<meta name="robots" content="noindex,nofollow">
+<script src="/site-config.js"></script>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/host/host.css">
+</head>
+<body data-page="dashboard">
+<div id="hdr"></div><div id="gate"></div>
+<main class="hmain" id="app" hidden>
+  <div class="ptitle"><div><h1>Dashboard</h1><p>The whole show at a glance.</p></div>
+    <div class="acts2"><a class="btn go" href="/host/record.html">● New recording</a><button id="drefresh" type="button">Refresh</button></div></div>
+  <div id="dstatus" class="status" role="status" aria-live="polite"></div>
+  <section class="stats" id="stats"></section>
+  <section id="schedsec"><div class="sech"><h2>Up next</h2></div><div id="sched"></div></section>
+  <section><div class="sech"><h2>Published episodes</h2><input id="dsearch" class="search" type="search" placeholder="Search episodes"></div><div id="plist"></div></section>
+</main>
+<script src="/host/shell.js"></script>
+<script src="/host/dashboard.js"></script>
+</body></html>
