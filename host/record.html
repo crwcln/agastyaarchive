@@ -7,25 +7,72 @@
 <link rel="icon" type="image/svg+xml" href="/logo.svg">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/host/host.css">
+<link rel="stylesheet" href="/host/studio.css">
 </head>
 <body data-page="record">
 <div id="hdr"></div><div id="gate"></div>
-<main class="hmain" id="app" hidden>
-  <div class="ptitle"><div><h1>Record</h1><p>Record or upload, polish the details, and publish.</p></div><a class="btn" href="/host/">← Dashboard</a></div>
-  <div class="card hf">
-<p class="note">Record or pick audio, add the details, and publish. It goes live on the site immediately, no redeploy.</p>
-<div class="rec"><span class="dot" id="hpdot"></span><b id="hptime">0:00</b>
-<button id="hpstart">● Record</button><button id="hppause" disabled>Pause</button><button id="hpstop" disabled>Stop</button></div>
-<label>…or choose an existing audio file</label><input type="file" id="hpfile" accept="audio/*">
-<audio id="hpprev" controls hidden></audio>
-<label>Date</label><input id="hpdate" type="date"><div id="publishScheduleField"><label for="hpwhen">Publish date and time (leave empty to publish now)</label><input id="hpwhen" type="datetime-local"></div>
-<label>Title</label><input id="hptitle" placeholder="e.g. The Mongols Were NOT Just Raiders">
-<label>Unit</label><select id="hpunit"></select>
-<section id="scriptGenerator" class="script-generator"><div class="schedule-head"><h3>Script generator</h3><span class="note">Host-only draft</span></div><div class="r2"><div><label for="hpscriptTime">Length</label><select id="hpscriptTime"><option value="3">3 minutes</option><option value="5" selected>5 minutes</option><option value="8">8 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option></select></div><div><label for="hpscriptTone">Tone</label><select id="hpscriptTone"><option value="Energetic and conversational">Energetic and conversational</option><option value="Dryly funny">Dryly funny</option><option value="Dramatic storytelling">Dramatic storytelling</option><option value="Clear and classroom-friendly">Clear and classroom-friendly</option><option value="Sharp and argumentative">Sharp and argumentative</option></select></div><div><label for="hprant">Rant level</label><select id="hprant"></select></div></div><div class="acts"><button type="button" id="hpscriptGenerate" class="go">Generate script with AI</button><button type="button" id="hpscriptCopy">Copy script</button></div><div id="hpscriptStatus" class="ai-status" role="status" aria-live="polite"></div><div id="hpscriptDiag" hidden><label for="hpscriptJobId">Gemini interaction ID</label><div class="pwrow"><input id="hpscriptJobId" placeholder="v1_..."><button type="button" id="hpscriptRecheck">Check job details</button></div><div id="hpscriptDiagStatus" class="ai-status" role="status" aria-live="polite"></div></div><textarea id="hpscript" placeholder="Your episode script will appear here. You can edit or copy it; it is not published with the episode."></textarea></section>
-<div class="field-head"><label for="hpdesc">The rant (description)</label><button type="button" id="hpdescribe">Generate with AI</button></div><div id="hpdescribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpdesc" placeholder="A short episode description"></textarea><div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><div id="hptranscribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div><div id="chapterEditor"><label class="chapter-options"><input type="checkbox" id="hpautoChapters" checked> Automatically generate chapters for this recording</label><label for="hpchapters">Episode chapters (one per line: 00:00 Introduction)</label><textarea id="hpchapters" placeholder="00:00 Introduction"></textarea><div id="hpchapterStatus" class="ai-status" role="status" aria-live="polite"></div></div>
-<progress id="hpprog" max="100" value="0" hidden></progress>
-<div class="acts"><button class="go" id="hppub">Publish episode</button><span id="hpmsg"></span><a class="btn done" id="hpdone" href="/host/" hidden>Back to the dashboard →</a></div></div>
+<main class="hmain wide" id="app" hidden>
+  <div class="ptitle"><div><h1>Record</h1><p>Record in the studio or import a file, polish the details, and publish.</p></div><a class="btn" href="/host/">← Dashboard</a></div>
+
+  <section class="studio" id="studio" data-state="idle" data-mode="idle" aria-label="Recording studio">
+    <div class="st-top">
+      <div class="st-id"><div class="onair"><i></i><span id="stmode">Standby</span></div><select id="stdev" aria-label="Microphone" hidden></select></div>
+      <div class="st-clock"><b id="hptime">0:00.0</b><small id="sttotal"></small></div>
+      <div class="st-vu"><i class="clip" id="stclip">CLIP</i><canvas id="stmeter" aria-label="Input level"></canvas><div class="st-scale"><span>-60</span><span>-40</span><span>-20</span><span>-6</span><span>0 dB</span></div></div>
+    </div>
+    <div class="st-wave"><canvas id="stwave" aria-label="Waveform"></canvas><div class="st-empty" id="stempty">Press the red button to record, or run a mic check to tune your filters first. Your voice shows up here live.</div></div>
+    <div class="st-transport">
+      <button type="button" class="tbtn" id="stcheck"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg><span>Mic check</span></button>
+      <button type="button" class="tbtn" id="stmark" disabled title="Drop a chapter marker (M)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18h2v-7h9l-2-4 2-4H8V3z"/></svg><span>Marker</span></button>
+      <button type="button" class="recbtn" id="hpstart" aria-label="Start recording" title="Record"><i></i></button>
+      <button type="button" class="tbtn" id="hppause" disabled title="Pause (Space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg><span>Pause</span></button>
+      <label class="tbtn" title="Import an audio file" style="cursor:pointer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5zm7-16-5 5h3.5v6h3V9H17z"/></svg><span>Import</span><input type="file" id="hpfile" accept="audio/*" hidden></label>
+    </div>
+    <div class="st-review" id="streview" hidden>
+      <button type="button" class="playbtn" id="stplay" aria-label="Play or pause"><svg class="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><svg class="ic-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg></button>
+      <span>Click or drag the waveform to scrub. Press <b>M</b> to drop a chapter marker at the playhead.</span>
+      <button type="button" id="stredo">Re-record</button>
+    </div>
+    <audio id="hpprev" preload="metadata" hidden></audio>
+  </section>
+
+  <details class="card rack" open>
+    <summary>Mic filters <small>shaped live as you record</small></summary>
+    <div class="in">
+      <div class="chips" id="stpresets"><span class="custom" id="stcustom" hidden>Custom mix</span></div>
+      <div class="sliders" id="stsliders"></div>
+      <div class="toggles">
+        <label><input type="checkbox" id="stns"> Browser noise suppression</label>
+        <label><input type="checkbox" id="stec"> Echo cancellation</label>
+        <label><input type="checkbox" id="stmon"> Monitor in headphones</label>
+      </div>
+      <p class="fine">Run a mic check to hear and see changes. Use headphones when monitoring or you will get feedback. Filters apply to live recordings only; imported files are used as-is.</p>
+    </div>
+  </details>
+
+  <section class="card hf sec">
+    <h2>Episode details</h2>
+    <label for="hptitle">Title</label><input id="hptitle" placeholder="e.g. The Mongols Were NOT Just Raiders">
+    <div class="r2"><div><label for="hpunit">Unit</label><select id="hpunit"></select></div><div><label for="hprant">Rant level</label><select id="hprant"></select></div></div>
+    <div class="r2"><div><label for="hpdate">Date</label><input id="hpdate" type="date"></div><div id="publishScheduleField"><label for="hpwhen">Publish at (blank = now)</label><input id="hpwhen" type="datetime-local"></div></div>
+    <div class="field-head"><label for="hpdesc">The rant (description)</label><button type="button" id="hpdescribe">Generate with AI</button></div><div id="hpdescribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hpdesc" placeholder="A short episode description"></textarea>
+  </section>
+
+  <section class="card hf sec" id="trCard">
+    <h2>Transcript &amp; chapters</h2>
+    <div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><div id="hptranscribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div><div id="chapterEditor"><label class="chapter-options"><input type="checkbox" id="hpautoChapters" checked> Automatically generate chapters for this recording</label><label for="hpchapters">Episode chapters (one per line: 00:00 Introduction)</label><textarea id="hpchapters" placeholder="00:00 Introduction"></textarea><div id="hpchapterStatus" class="ai-status" role="status" aria-live="polite"></div></div>
+
+  </section>
+
+  <div class="hf sec"><section id="scriptGenerator" class="script-generator"><div class="schedule-head"><h3>Script generator</h3><span class="note">Host-only draft</span></div><div class="r2"><div><label for="hpscriptTime">Length</label><select id="hpscriptTime"><option value="3">3 minutes</option><option value="5" selected>5 minutes</option><option value="8">8 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option></select></div><div><label for="hpscriptTone">Tone</label><select id="hpscriptTone"><option value="Energetic and conversational">Energetic and conversational</option><option value="Dryly funny">Dryly funny</option><option value="Dramatic storytelling">Dramatic storytelling</option><option value="Clear and classroom-friendly">Clear and classroom-friendly</option><option value="Sharp and argumentative">Sharp and argumentative</option></select></div></div><div class="acts"><button type="button" id="hpscriptGenerate" class="go">Generate script with AI</button><button type="button" id="hpscriptCopy">Copy script</button></div><div id="hpscriptStatus" class="ai-status" role="status" aria-live="polite"></div><div id="hpscriptDiag" hidden><label for="hpscriptJobId">Gemini interaction ID</label><div class="pwrow"><input id="hpscriptJobId" placeholder="v1_..."><button type="button" id="hpscriptRecheck">Check job details</button></div><div id="hpscriptDiagStatus" class="ai-status" role="status" aria-live="polite"></div></div><textarea id="hpscript" placeholder="Your episode script will appear here. You can edit or copy it; it is not published with the episode."></textarea></section></div>
+
+  <div class="pubbar hf">
+    <progress id="hpprog" max="100" value="0" hidden></progress>
+    <button class="go" id="hppub">Publish episode</button><span id="hpmsg"></span>
+    <a class="btn done" id="hpdone" href="/host/" hidden>Back to the dashboard →</a>
+  </div>
 </main>
 <script src="/host/shell.js"></script>
+<script src="/host/studio.js"></script>
 <script src="/host/record.js"></script>
 </body></html>
