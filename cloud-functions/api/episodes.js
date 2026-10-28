@@ -5,6 +5,9 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 const CHUNK = 2 * 1024 * 1024, MAX_CHUNKS = 500;
 const pad = i => String(i).padStart(5, "0");
+// Global reactions: one blob per visitor+reaction (reactions/v/<episode>/<reaction>/<visitor>), recounted into reactions/c/<episode>.json
+const REACTIONS = ["fire", "laugh", "mindblown", "insight"];
+const reactionTotals = c => Object.fromEntries(REACTIONS.map(r => [r, Math.max(0, Number(c && c[r]) || 0)]));
 const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length === y.length && timingSafeEqual(x, y); };
 const interactionFailure = result => {
@@ -27,7 +30,9 @@ async function handle(context) {
 
   if (request.method === "GET") {
     const idx = await load(), now = Date.now();
-    return json({ episodes: idx.episodes.filter(e => !e.publishAt || Date.parse(e.publishAt) <= now) });
+    const episodes = idx.episodes.filter(e => !e.publishAt || Date.parse(e.publishAt) <= now);
+    const counts = await Promise.all(episodes.map(e => store.get(`reactions/c/${e.id}.json`, { type: "json" }).catch(() => null)));
+    return json({ episodes: episodes.map((e, i) => ({ ...e, reactions: reactionTotals(counts[i]) })) });
   }
   if (request.method !== "POST" && request.method !== "PUT") return json({ error: "Method not allowed" }, 405);
 
@@ -45,6 +50,19 @@ async function handle(context) {
       const key = `analytics/listens/${day}/${String(localHour).padStart(2, "0")}/${visitorHash}/${id}.json`;
       await store.setJSON(key, { episodeId: id, localHour, recordedAt: new Date().toISOString() });
       return json({ ok: true });
+    }
+    if (b.action === "react") {
+      const id = String(b.id || ""), listener = String(b.listener || ""), reaction = b.reaction === null || b.reaction === "" || b.reaction === undefined ? null : String(b.reaction);
+      if (!/^[a-z0-9]{6,20}$/.test(id) || !/^[a-f0-9]{32}$/.test(listener) || (reaction !== null && !REACTIONS.includes(reaction))) return json({ error: "Bad reaction" }, 400);
+      const idx = await load(), episode = idx.episodes.find(item => item.id === id);
+      if (!episode || (episode.publishAt && Date.parse(episode.publishAt) > Date.now())) return json({ error: "Episode not found" }, 404);
+      const visitor = createHash("sha256").update("reaction|" + listener).digest("hex").slice(0, 40), keyFor = r => `reactions/v/${id}/${r}/${visitor}`;
+      await Promise.all(REACTIONS.filter(r => r !== reaction).map(r => store.delete(keyFor(r)).catch(() => {})));
+      if (reaction) await store.setJSON(keyFor(reaction), { at: new Date().toISOString() });
+      const totals = {};
+      await Promise.all(REACTIONS.map(async r => { const { blobs } = await store.list({ prefix: `reactions/v/${id}/${r}/`, consistency: "strong" }); totals[r] = blobs.length; }));
+      await store.setJSON(`reactions/c/${id}.json`, totals);
+      return json({ ok: true, reactions: totals, selected: reaction });
     }
   }
 
@@ -308,6 +326,11 @@ async function handle(context) {
     await store.setJSON("episodes.json", idx);
     const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" });
     for (const o of blobs) await store.delete(o.key);
+    try { // best effort: drop the episode's reactions too
+      const { blobs: votes } = await store.list({ prefix: `reactions/v/${id}/`, consistency: "strong" });
+      for (const o of votes) await store.delete(o.key);
+      await store.delete(`reactions/c/${id}.json`);
+    } catch (e) {}
     return json({ ok: true });
   }
   return json({ error: "Unknown action" }, 400);
