@@ -140,9 +140,21 @@ nav{animation:rise .7s both}
 
 <script>
 const SITE_CONFIG=window.SITE_CONFIG||{},SITE_VERSION=SITE_CONFIG.version||"1.0.0",FEATURES=SITE_CONFIG.features||{};
-let filter="All",eps=[],adminPw=null,err="",initialEpisodesLoaded=false,pendingEpisodeRefresh=false,episodeRefreshBusy=false;
+let filter="All",eps=[],adminPw=null,err="",initialEpisodesLoaded=false,pendingEpisodeRefresh=false,episodeRefreshBusy=false,analyticsListener="";
 const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(x==="class")e.className=a[x];else if(x.startsWith("on"))e[x]=a[x];else e.setAttribute(x,a[x])}for(const c of k.flat())if(c!=null)e.append(c);return e};
 const fmt=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
+function getAnalyticsListener(){
+  if(analyticsListener)return analyticsListener;
+  try{analyticsListener=localStorage.getItem("aa_analytics_listener")||""}catch(e){}
+  if(!/^[a-f0-9]{32}$/.test(analyticsListener)){
+    const bytes=new Uint8Array(16);
+    if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(bytes);
+    else for(let i=0;i<bytes.length;i++)bytes[i]=Math.floor(Math.random()*256);
+    analyticsListener=Array.from(bytes,value=>value.toString(16).padStart(2,"0")).join("");
+    try{localStorage.setItem("aa_analytics_listener",analyticsListener)}catch(e){}
+  }
+  return analyticsListener;
+}
 const reactionOptions=[{key:"fire",emoji:"🔥",label:"Fire"},{key:"laugh",emoji:"😂",label:"Laugh"},{key:"mindblown",emoji:"🤯",label:"Mind blown"},{key:"insight",emoji:"💡",label:"Insight"}];
 const reactionStorageKey="aa_episode_reactions";
 function readStoredEpisodeReactions(){
@@ -246,6 +258,14 @@ async function refreshPublishedEpisodes(){
   }catch(e){}
   finally{episodeRefreshBusy=false}
 }
+document.addEventListener("play",event=>{
+  const audio=event.target,episode=audio.closest&&audio.closest(".ep");
+  if(!episode||!episode.dataset.episodeId)return;
+  const listener=getAnalyticsListener();
+  fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"record-listen",id:episode.dataset.episodeId,listener,localHour:new Date().getHours()})})
+    .then(response=>{if(!response.ok)console.warn("Could not record listening analytics (HTTP "+response.status+").")})
+    .catch(error=>console.warn("Could not record listening analytics.",error));
+},true);
 document.addEventListener("ended",()=>{if(pendingEpisodeRefresh){pendingEpisodeRefresh=false;refreshPublishedEpisodes()}},true);
 if(FEATURES.liveEpisodeUpdates!==false){
   window.setInterval(refreshPublishedEpisodes,60000);
@@ -343,7 +363,7 @@ function render(){
   const list=document.getElementById("list");list.replaceChildren();
   if(!shown.length){list.append(h("div",{class:"empty"},err||"The first episode is being researched, ranted about, and edited. Check back soon."));return}
   shown.forEach((e,i)=>{
-    const c=h("article",{class:"ep"+(i===0&&filter==="All"?" latest":"")},
+    const c=h("article",{class:"ep"+(i===0&&filter==="All"?" latest":""),"data-episode-id":e.id},
       h("div",{class:"meta"},h("span",{class:"num"},"EP "+e.num),h("span",{class:"eq"},h("i"),h("i"),h("i")),e.unit?h("span",{class:"tag"},e.unit):null,h("span",null,fmt(e.date)),
         e.rant?h("span",{class:"rant"},"Rant level ",...Array.from({length:Math.min(5,Math.max(1,e.rant))},(_,i)=>h("span",{class:"fl",style:"animation-delay:"+(i*.18)+"s"},"\u{1F525}"))):null),
       h("h3",null,e.title),e.desc?h("p",null,e.desc):null,

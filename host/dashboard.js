@@ -5,17 +5,20 @@ const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(
 const mb=b=>(b||0)/1048576,size=b=>mb(b)>=1024?(mb(b)/1024).toFixed(2)+" GB":mb(b).toFixed(1)+" MB";
 const day=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
 const localDT=iso=>{const d=new Date(iso);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)};
-let pub=[],sch=[],q="";
+let pub=[],sch=[],q="",analytics=null,analyticsError="";
 const say=t=>$("dstatus").textContent=t;
 function count(el,to){const t0=performance.now(),step=t=>{const p=Math.min(1,(t-t0)/700);el.textContent=Math.round(to*p);if(p<1)requestAnimationFrame(step)};requestAnimationFrame(step)}
 
 async function load(){
   say("Loading…");
   try{
-    const [a,b]=await Promise.all([
+    const [a,b,c]=await Promise.all([
       fetch("/api/episodes",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}),
-      F.episodeScheduling===false?{episodes:[]}:api({action:"list-scheduled"})]);
-    pub=(a.episodes||[]).sort((x,y)=>y.num-x.num);sch=b.episodes||[];say("");render();
+      F.episodeScheduling===false?{episodes:[]}:api({action:"list-scheduled"}),
+      api({action:"analytics-summary"}).then(data=>({data})).catch(error=>({error}))]);
+    pub=(a.episodes||[]).sort((x,y)=>y.num-x.num);sch=b.episodes||[];
+    analytics=c.data||null;analyticsError=c.error?c.error.message:"";
+    say("");render();
   }catch(e){say("Couldn’t load the dashboard: "+e.message)}
 }
 const act=(label,fn,ok,cls)=>{const b=h("button",{type:"button",class:cls||""},label);
@@ -31,6 +34,52 @@ function stats(){
   const m=h("i");box.append(h("div",{class:"stat",style:"animation-delay:140ms"},h("b",{class:"sm"},size(total)),h("span",null,"Storage used of 1 GB"),h("div",{class:"meter"},m)));
   requestAnimationFrame(()=>requestAnimationFrame(()=>m.style.width=Math.max(pct,total?2:0)+"%"));
   box.append(h("div",{class:"stat",style:"animation-delay:210ms"},h("b",{class:"sm",title:last?last.title:""},last?last.title:"Nothing yet"),h("span",null,last?"Latest · "+day(last.date):"Latest episode")));
+}
+function hourLabel(hour){
+  const suffix=hour<12?"AM":"PM",value=hour%12||12;
+  return value+" "+suffix;
+}
+function renderAnalytics(){
+  const range=$("analytics-range"),metrics=$("analytics-stats"),hours=$("hour-chart"),days=$("daily-chart"),dateRange=$("daily-range"),top=$("top-episodes"),error=$("analytics-error");
+  metrics.replaceChildren();hours.replaceChildren();days.replaceChildren();dateRange.replaceChildren();top.replaceChildren();
+  error.hidden=!analyticsError;error.textContent=analyticsError?"Listening data unavailable: "+analyticsError:"";
+  if(!analytics){
+    range.textContent="No listening data available";
+    return;
+  }
+  range.textContent="Rolling 30 days";
+  const topHour=analytics.topHour,peak=topHour===null||topHour===undefined?"—":hourLabel(topHour);
+  for(const [label,value] of [
+    ["Estimated listeners",analytics.listeners||0],
+    ["Play sessions",analytics.plays||0],
+    ["Peak listening hour",peak]
+  ]){
+    metrics.append(h("div",{class:"analytics-stat"},h("b",null,typeof value==="number"?value.toLocaleString():value),h("span",null,label)));
+  }
+  const hourly=Array.isArray(analytics.hourly)?analytics.hourly:Array(24).fill(0),hourMax=Math.max(...hourly,0);
+  hours.setAttribute("role","img");hours.setAttribute("aria-label","Play sessions by listeners' local hour over the last 30 days");
+  hourly.forEach((value,hour)=>{
+    const column=h("div",{class:"hour-col",title:hourLabel(hour)+": "+value+" play sessions"},
+      h("span",{class:"hour-bar",style:"--bar:"+(hourMax?Math.round(value/hourMax*100):0)}),
+      h("span",{class:"hour-label","aria-hidden":"true"},hour%6===0?hourLabel(hour).replace(" ",""):""));
+    hours.append(column);
+  });
+  const daily=Array.isArray(analytics.daily)?analytics.daily:[],dayMax=Math.max(...daily.map(item=>Number(item.plays)||0),0);
+  days.setAttribute("role","img");days.setAttribute("aria-label","Daily play sessions during the last 30 days");
+  daily.forEach(item=>{
+    const value=Number(item.plays)||0;
+    days.append(h("div",{class:"daily-col",title:day(item.date)+": "+value+" play sessions"},
+      h("span",{class:"daily-bar",style:"--bar:"+(dayMax?Math.round(value/dayMax*100):0)})));
+  });
+  const dates=daily.length?[day(daily[0].date),day(daily[daily.length-1].date)]:["",""];
+  dateRange.replaceChildren(h("span",null,dates[0]),h("span",null,dates[1]));
+  const episodes=Array.isArray(analytics.topEpisodes)?analytics.topEpisodes:[];
+  if(!episodes.length)top.append(h("div",{class:"empty"},"No listening data yet. Plays are counted when an episode starts."));
+  else{
+    const list=h("ol",{class:"top-episode-list"});
+    episodes.forEach((episode,index)=>list.append(h("li",{class:"top-episode"},h("span",null,(index+1)+". "+episode.title),h("b",null,(Number(episode.plays)||0).toLocaleString()))));
+    top.append(list);
+  }
 }
 function scheduled(){
   $("schedsec").hidden=F.episodeScheduling===false;const box=$("sched");box.replaceChildren();
@@ -55,7 +104,7 @@ function published(){
       h("div",{class:"tags"},e.transcript&&h("span",null,"transcript"),e.chapters&&e.chapters.length>0&&h("span",null,e.chapters.length+" chapters"),e.rant&&h("span",null,"\u{1F525}".repeat(Math.min(5,e.rant))))),
     F.episodeDeletion!==false?remove(e):h("span"))));
 }
-function render(){stats();scheduled();published()}
+function render(){stats();renderAnalytics();scheduled();published()}
 $("dsearch").addEventListener("input",e=>{q=e.target.value.trim().toLowerCase();published()});
 $("drefresh").addEventListener("click",load);
 load();

@@ -1,7 +1,7 @@
 // GET  /api/episodes  -> public episode list
 // POST /api/episodes  -> admin actions: check | upload-start | publish | delete; PUT uploads an audio part
 import { getStore } from "@edgeone/pages-blob";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 const CHUNK = 2 * 1024 * 1024, MAX_CHUNKS = 500;
 const pad = i => String(i).padStart(5, "0");
@@ -31,6 +31,23 @@ async function handle(context) {
   }
   if (request.method !== "POST" && request.method !== "PUT") return json({ error: "Method not allowed" }, 405);
 
+  let b;
+  if (request.method === "POST") {
+    try { b = await request.json(); } catch { return json({ error: "Bad JSON" }, 400); }
+    if (b.action === "record-listen") {
+      const id = String(b.id || ""), listener = String(b.listener || ""), localHour = Number(b.localHour);
+      if (!/^[a-z0-9]{6,20}$/.test(id) || !/^[a-f0-9]{32}$/.test(listener) || !Number.isInteger(localHour) || localHour < 0 || localHour > 23) {
+        return json({ error: "Bad listening event" }, 400);
+      }
+      const idx = await load(), episode = idx.episodes.find(item => item.id === id);
+      if (!episode || (episode.publishAt && Date.parse(episode.publishAt) > Date.now())) return json({ error: "Episode not found" }, 404);
+      const day = new Date().toISOString().slice(0, 10), visitorHash = createHash("sha256").update(listener).digest("hex");
+      const key = `analytics/listens/${day}/${String(localHour).padStart(2, "0")}/${visitorHash}/${id}.json`;
+      await store.setJSON(key, { episodeId: id, localHour, recordedAt: new Date().toISOString() });
+      return json({ ok: true });
+    }
+  }
+
   if (!env.ADMIN_PASSWORD || !same(request.headers.get("x-admin-password"), env.ADMIN_PASSWORD)) {
     await new Promise(r => setTimeout(r, 600));
     return json({ error: "Wrong password" }, 401);
@@ -43,8 +60,6 @@ async function handle(context) {
     await store.set(`audio/${id}/${pad(part)}`, bytes);
     return json({ ok: true });
   }
-
-  let b; try { b = await request.json(); } catch { return json({ error: "Bad JSON" }, 400); }
 
   if (b.action === "check") return json({ ok: true });
 
@@ -203,6 +218,45 @@ async function handle(context) {
   }
 
   const idx = await load();
+
+  if (b.action === "analytics-summary") {
+    const published = new Map(idx.episodes
+      .filter(episode => !episode.publishAt || Date.parse(episode.publishAt) <= Date.now())
+      .map(episode => [episode.id, episode.title]));
+    const listeners = new Set(), hourly = Array(24).fill(0), daily = [], episodePlays = new Map();
+    const today = new Date();
+    for (let offset = 29; offset >= 0; offset--) {
+      const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - offset));
+      const day = date.toISOString().slice(0, 10);
+      const { blobs } = await store.list({ prefix: `analytics/listens/${day}/`, consistency: "strong" });
+      let plays = 0;
+      for (const blob of blobs) {
+        const match = blob.key.match(/^analytics\/listens\/\d{4}-\d{2}-\d{2}\/(\d{2})\/([a-f0-9]{64})\/([a-z0-9]{6,20})\.json$/);
+        if (!match || !published.has(match[3])) continue;
+        const hour = Number(match[1]);
+        if (hour < 0 || hour > 23) continue;
+        listeners.add(match[2]);
+        hourly[hour]++;
+        plays++;
+        episodePlays.set(match[3], (episodePlays.get(match[3]) || 0) + 1);
+      }
+      daily.push({ date: day, plays });
+    }
+    const topHour = hourly.reduce((best, count, hour) => count > hourly[best] ? hour : best, 0);
+    const topEpisodes = [...episodePlays.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([id, plays]) => ({ id, title: published.get(id), plays }));
+    return json({
+      days: 30,
+      listeners: listeners.size,
+      plays: hourly.reduce((sum, count) => sum + count, 0),
+      hourly,
+      daily,
+      topHour: hourly[topHour] ? topHour : null,
+      topEpisodes
+    });
+  }
 
   if (b.action === "list-scheduled") return json({ episodes: idx.episodes.filter(e => e.publishAt && Date.parse(e.publishAt) > Date.now()).sort((a, b) => Date.parse(a.publishAt) - Date.parse(b.publishAt)) });
 
