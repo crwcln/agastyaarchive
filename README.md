@@ -4,6 +4,8 @@
 
 Edit `site-config.js` in the project root to change the displayed version and enable or disable site features. Bump `version` when publishing a site change so returning visitors see the update banner.
 
+Episode reactions are global: every visitor’s pick is counted on the server (one vote per browser per episode) and totals refresh with the live episode check.
+
 Available feature switches: `updateNotices`, `episodeFilters`, `episodeReactions`, `hostPanel`, `episodeDeletion`, `customAudioPlayer`, `transcript`, `autoChapters`, `episodeScheduling`, `aiDescription`, `scriptGenerator`, `transcribeAudio`, `backgroundMusic`, `autoReloadOnUpdate`, and `liveEpisodeUpdates`. Pages check for a version change every minute and when the visitor returns to the tab, then reload once a new version is found. Set `autoReloadOnUpdate` to `false` to disable this. Published episodes are checked every minute and when the visitor returns to the tab; set `liveEpisodeUpdates` to `false` to disable this. The list refresh waits until active playback ends so it does not interrupt an episode.
 
 ## API routes
