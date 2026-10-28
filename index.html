@@ -45,6 +45,7 @@ nav b{color:var(--gold)}
 .reaction-button.selected{background:color-mix(in srgb,var(--accent) 12%,var(--surface));border-color:var(--accent);color:var(--accent)}
 .reaction-button .emoji{font-size:18px;line-height:1}
 .reaction-count{font-variant-numeric:tabular-nums}
+.reaction-note{align-self:center;font-size:12px;color:var(--mute)}
 audio{width:100%;height:42px}
 .custom-player{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;margin-top:10px;padding:11px 13px;background:color-mix(in srgb,var(--bg) 72%,var(--surface));border:1px solid var(--line);border-radius:6px}.custom-player .ep-stream{display:none}.player-toggle{width:44px;height:44px;border:0;border-radius:50%;background:var(--accent);color:var(--btn);font:700 18px 'Space Grotesk',sans-serif;cursor:pointer;transition:transform .18s,background .18s}.player-toggle:hover{transform:scale(1.06);background:var(--gold)}.player-toggle:focus-visible,.player-speed:focus-visible,.player-seek:focus-visible{outline:3px solid var(--gold);outline-offset:3px}.player-main{min-width:0}.player-seek{appearance:none;display:block;width:100%;height:6px;margin:6px 0 12px;border-radius:99px;background:linear-gradient(to right,var(--accent) var(--progress,0%),var(--line) var(--progress,0%));cursor:pointer}.player-seek::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-seek::-moz-range-thumb{width:12px;height:12px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-meta{display:flex;justify-content:space-between;gap:10px;color:var(--mute);font-size:11px;line-height:1.3}.player-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.player-speed{min-width:48px;padding:7px 8px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--ink);font:700 12px 'Space Grotesk',sans-serif;cursor:pointer}.player-speed:hover{border-color:var(--accent);color:var(--accent)}@media(max-width:420px){.custom-player{grid-template-columns:42px minmax(0,1fr) 42px;gap:9px;padding:10px}.player-toggle{width:40px;height:40px}.player-speed{min-width:42px;padding:6px 4px}.player-meta{font-size:10px}}.chapters{margin:0 0 12px;border-top:1px solid var(--line);padding-top:10px}.chapters summary{color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.chapter-list{display:grid;gap:4px;margin:10px 0 0;padding:0;list-style:none}.chapter-list button{display:flex;gap:10px;width:100%;padding:7px 9px;border:0;border-radius:4px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}.chapter-list button:hover{background:color-mix(in srgb,var(--accent) 12%,transparent)}.chapter-list time{flex:none;color:var(--accent);font-variant-numeric:tabular-nums;font-weight:700}.transcript{margin:0 0 12px;border-top:1px solid var(--line);padding-top:10px}.transcript summary{color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.transcript-text{max-width:72ch;margin-top:10px;color:var(--mute);font-size:14px;line-height:1.8}.transcript-text p{margin:0 0 1em}.transcript-text p:last-child{margin-bottom:0}.transcript-word{border-radius:3px;cursor:pointer;transition:background-color .08s,color .08s}.transcript-word:hover{background:color-mix(in srgb,var(--accent) 25%,transparent)}.transcript-word.active{background:var(--accent);color:var(--btn);box-shadow:0 0 0 2px var(--accent)}.transcript-text::selection,.transcript-word::selection{background:var(--accent);color:var(--btn)}.noaudio{font-size:13px;color:var(--mute);font-style:italic}
 .empty{border:2px dashed var(--line);border-radius:6px;padding:36px 20px;text-align:center;color:var(--mute)}
@@ -166,22 +167,61 @@ function readStoredEpisodeReactions(){
 function selectedReactionForEpisode(id){
   const stored=readStoredEpisodeReactions(); return stored && typeof stored[id]==="string" ? stored[id] : null;
 }
+function writeStoredEpisodeReactions(map){try{localStorage.setItem(reactionStorageKey,JSON.stringify(map))}catch(e){}}
 function reactionCountsForEpisode(episode){
-  const totals={fire:0,laugh:0,mindblown:0,insight:0};
-  const raw=episode && typeof episode.reactions === "object" ? episode.reactions : {};
+  // Totals are global: they come from the server and already include this visitor's own reaction.
+  const totals={fire:0,laugh:0,mindblown:0,insight:0},raw=episode&&episode.reactions&&typeof episode.reactions==="object"?episode.reactions:{};
   for(const key of Object.keys(totals)) totals[key]=Math.max(0,Number(raw[key])||0);
-  const selected=selectedReactionForEpisode(episode && episode.id ? episode.id : "");
-  if(selected && totals[selected]!==undefined) totals[selected]+=1;
   return totals;
 }
-function updateEpisodeReaction(episode,key){
-  if(!episode||!episode.id)return;
-  const stored=readStoredEpisodeReactions();
-  const previous=stored[episode.id];
-  if(previous===key){delete stored[episode.id];}
-  else stored[episode.id]=key;
-  try{localStorage.setItem(reactionStorageKey,JSON.stringify(stored));}catch(e){}
-  render();
+function refreshReactionView(episode){
+  // Swap only the reaction buttons so a playing episode is never interrupted by a full re-render.
+  const card=[...document.querySelectorAll("#list .ep")].find(c=>c.dataset.episodeId===episode.id),old=card&&card.querySelector(".episode-reactions"),fresh=reactionView(episode);
+  if(!old||!fresh)return null;
+  const focused=old.contains(document.activeElement)&&document.activeElement.dataset.reaction;
+  old.replaceWith(fresh);
+  if(focused){const again=fresh.querySelector('[data-reaction="'+focused+'"]');if(again)again.focus()}
+  return fresh;
+}
+async function sendReaction(episode,reaction){
+  const response=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"react",id:episode.id,listener:getAnalyticsListener(),reaction})});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.reactions)throw new Error(data.error||"HTTP "+response.status);
+  return data.reactions;
+}
+async function updateEpisodeReaction(episode,key){
+  if(!episode||!episode.id||episode.reacting)return;
+  const stored=readStoredEpisodeReactions(),previous=typeof stored[episode.id]==="string"?stored[episode.id]:null,next=previous===key?null:key,before=episode.reactions;
+  const counts=reactionCountsForEpisode(episode);
+  if(previous&&counts[previous]>0)counts[previous]-=1;
+  if(next)counts[next]+=1;
+  episode.reactions=counts;episode.reacting=true;
+  if(next)stored[episode.id]=next;else delete stored[episode.id];
+  writeStoredEpisodeReactions(stored);refreshReactionView(episode);
+  try{episode.reactions=await sendReaction(episode,next);episode.reacting=false;refreshReactionView(episode)}
+  catch(error){
+    console.warn("Could not save reaction.",error);
+    const undo=readStoredEpisodeReactions();if(previous)undo[episode.id]=previous;else delete undo[episode.id];writeStoredEpisodeReactions(undo);
+    episode.reactions=before;episode.reacting=false;
+    const fresh=refreshReactionView(episode);
+    if(fresh){const note=h("span",{class:"reaction-note",role:"status"},"Couldn\u2019t save that reaction. Try again.");fresh.append(note);setTimeout(()=>note.remove(),4000)}
+  }
+}
+let syncingReactions=false;
+async function syncStoredReactions(){
+  // One-time: reactions picked before they were global (kept only in this browser) are sent to the server.
+  const flag="aa_reactions_synced_v1";
+  if(FEATURES.episodeReactions===false||syncingReactions)return;
+  try{if(localStorage.getItem(flag))return}catch(e){return}
+  syncingReactions=true;
+  const stored=readStoredEpisodeReactions();let ok=true;
+  for(const id of Object.keys(stored)){
+    const episode=eps.find(e=>e.id===id);
+    if(!episode||!reactionOptions.some(o=>o.key===stored[id]))continue;
+    try{episode.reactions=await sendReaction(episode,stored[id]);refreshReactionView(episode)}catch(e){ok=false;break}
+  }
+  syncingReactions=false;
+  if(ok)try{localStorage.setItem(flag,"1")}catch(e){}
 }
 function reactionView(episode){
   if(FEATURES.episodeReactions===false)return null;
@@ -243,6 +283,7 @@ async function load(){
     eps=(d.episodes||[]).sort((a,b)=>b.num-a.num);initialEpisodesLoaded=true;noticeUpdates(eps);err=""}
   catch(e){err="Couldn\u2019t load episodes: "+e.message+". (Running locally? Use \u201cedgeone pages dev\u201d.)"}
   render();
+  if(initialEpisodesLoaded)syncStoredReactions();
 }
 async function refreshPublishedEpisodes(){
   if(!initialEpisodesLoaded||episodeRefreshBusy||document.hidden)return;
@@ -251,6 +292,7 @@ async function refreshPublishedEpisodes(){
     const response=await fetch("/api/episodes?live-check="+Date.now(),{cache:"no-store"}),data=await response.json();
     if(!response.ok||!Array.isArray(data.episodes))return;
     const next=data.episodes.sort((a,b)=>b.num-a.num),currentIds=eps.map(e=>e.id).join("|"),nextIds=next.map(e=>e.id).join("|");
+    next.forEach(n=>{const cur=eps.find(e=>e.id===n.id);if(cur&&!cur.reacting&&n.reactions&&JSON.stringify(cur.reactions)!==JSON.stringify(n.reactions)){cur.reactions=n.reactions;refreshReactionView(cur)}});
     if(currentIds===nextIds)return;
     const playing=[...document.querySelectorAll("#list audio")].some(audio=>!audio.paused&&!audio.ended);
     if(playing){pendingEpisodeRefresh=true;updateMessage.textContent="A new episode is available. The episode list will update when playback ends.";updateBanner.hidden=false;return}
