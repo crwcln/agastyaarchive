@@ -1,6 +1,6 @@
 // Update version when deploying site changes. Set a feature to false to disable it.
 window.SITE_CONFIG = {
-  version: "1.4.5",
+  version: "1.4.6",
   features: {
     updateNotices: true,
     autoReloadOnUpdate: true,
