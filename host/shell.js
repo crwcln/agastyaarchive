@@ -1,12 +1,13 @@
-// Shared host-area shell: password gate, header/nav, and the API helper every host page uses.
+// Shared host-area shell: password gate, "who are you" identity, header/nav, and the API helper every host page uses.
 window.HOST=(()=>{
 const FEATURES=(window.SITE_CONFIG&&window.SITE_CONFIG.features)||{};
-let pw="",unlocked=false;const cbs=[];
-try{pw=sessionStorage.getItem("hp_pw")||""}catch(e){}
+let pw="",unlocked=false,identity=null;const cbs=[];
+try{pw=sessionStorage.getItem("hp_pw")||"";identity=JSON.parse(localStorage.getItem("aa_host_identity")||"null")}catch(e){}
+if(!identity||!identity.name)identity=null;
 const $=id=>document.getElementById(id);
 
 async function api(body){
-  const r=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":pw},body:JSON.stringify(body)});
+  const r=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":pw},body:JSON.stringify({by:identity||undefined,...body})});
   const t=await r.text();let d={};try{d=JSON.parse(t)}catch(e){}
   if(!r.ok)throw new Error(d.error||(r.status===404?"API not found (HTTP 404): the cloud-functions folder isn’t deployed.":"HTTP "+r.status+(t?": "+t.slice(0,120):"")));
   if(!Object.keys(d).length)throw new Error("API returned something that isn’t JSON (functions probably aren’t deployed).");
@@ -15,14 +16,27 @@ async function api(body){
 function header(){
   const page=document.body.dataset.page,link=(p,href,label)=>`<a href="${href}"${p===page?' class="on"':""}>${label}</a>`;
   $("hdr").innerHTML=`<header class="hbar"><a class="brand" href="/host/"><img src="/logo.svg" alt=""><span>The Agastya Archive</span><em>Host</em></a>
-<nav class="hnav">${link("dashboard","/host/","Dashboard")}${link("record","/host/record.html","Record")}</nav>
-<div class="hright"><a class="btn" href="/">View site ↗</a><button type="button" id="hlock">Lock</button></div></header>`;
+<nav class="hnav">${link("dashboard","/host/","Dashboard")}${link("record","/host/record.html","Record")}${FEATURES.hostIdeas!==false?link("ideas","/host/ideas.html","Ideas"):""}</nav>
+<div class="hright"><span class="who" id="hwho" hidden></span><button type="button" id="hswitch" hidden>Switch</button><a class="btn" href="/">View site ↗</a><button type="button" id="hlock">Lock</button></div></header>`;
+  if(identity){$("hwho").hidden=$("hswitch").hidden=false;$("hwho").textContent=identity.name+" · "+identity.role;
+    $("hswitch").addEventListener("click",()=>{try{localStorage.removeItem("aa_host_identity")}catch(e){}location.reload()})}
   $("hlock").addEventListener("click",()=>{try{sessionStorage.removeItem("hp_pw")}catch(e){}location.reload()});
 }
-function open(){
-  unlocked=true;$("gate").replaceChildren();header();$("app").hidden=false;
-  cbs.splice(0).forEach(cb=>cb());
+function finish(){unlocked=true;$("gate").replaceChildren();header();$("app").hidden=false;cbs.splice(0).forEach(cb=>cb())}
+function askWho(){
+  $("gate").innerHTML=`<div class="gate"><div class="card"><h1>Who’s this?</h1><p class="mute">Your name shows on ideas, comments and drafts so the team knows who wrote what. Names aren’t verified, so don’t share the host password with anyone you don’t trust.</p>
+<label for="gname">Your name</label><input id="gname" maxlength="40" autocomplete="nickname">
+<div class="roles"><label><input type="radio" name="grole" value="Host" checked> Host</label><label><input type="radio" name="grole" value="Co-host"> Co-host</label></div>
+<div class="acts"><button class="go" type="button" id="gcont">Continue</button><span id="gnmsg" class="mute"></span></div></div></div>`;
+  const input=$("gname"),go=()=>{
+    const name=input.value.trim();if(!name){$("gnmsg").textContent="Enter a name first.";return}
+    identity={name,role:document.querySelector('input[name="grole"]:checked').value};
+    try{localStorage.setItem("aa_host_identity",JSON.stringify(identity))}catch(e){}
+    finish();
+  };
+  $("gcont").addEventListener("click",go);input.addEventListener("keydown",e=>{if(e.key==="Enter")go()});input.focus();
 }
+const open=()=>identity?finish():askWho();
 async function tryPw(p){
   pw=p;
   try{await api({action:"check"});try{sessionStorage.setItem("hp_pw",pw)}catch(e){}return ""}
@@ -45,5 +59,5 @@ async function start(){
   showGate();
 }
 start();
-return{api,features:FEATURES,pw:()=>pw,ready:cb=>unlocked?cb():cbs.push(cb)};
+return{api,features:FEATURES,pw:()=>pw,who:()=>identity,ready:cb=>unlocked?cb():cbs.push(cb)};
 })();

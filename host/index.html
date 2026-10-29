@@ -7,6 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="/logo.svg">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/host/host.css">
+<link rel="stylesheet" href="/host/extras.css">
 </head>
 <body data-page="dashboard">
 <div id="hdr"></div><div id="gate"></div>
@@ -26,9 +27,11 @@
     </div>
     <p id="analytics-error" class="analytics-error" role="status" hidden></p>
   </section>
+  <section id="draftsec"><div class="sech"><h2>Drafts</h2><span class="mute">Episodes in progress, only visible here</span></div><div id="drafts"></div></section>
   <section id="schedsec"><div class="sech"><h2>Up next</h2></div><div id="sched"></div></section>
   <section><div class="sech"><h2>Published episodes</h2><input id="dsearch" class="search" type="search" placeholder="Search episodes"></div><div id="plist"></div></section>
 </main>
+<script src="/emoji.js"></script>
 <script src="/host/shell.js"></script>
 <script src="/host/dashboard.js"></script>
 </body></html>

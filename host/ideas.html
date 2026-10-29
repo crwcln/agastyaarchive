@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ideas · Agastya Archive Host</title>
+<meta name="robots" content="noindex,nofollow">
+<script src="/site-config.js"></script>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/host/host.css">
+<link rel="stylesheet" href="/host/extras.css">
+</head>
+<body data-page="ideas">
+<div id="hdr"></div><div id="gate"></div>
+<main class="hmain" id="app" hidden>
+  <div class="ptitle"><div><h1>Ideas</h1><p>A shared board for hosts and co-hosts. Pitch episodes, riff on each other’s ideas, then turn the best ones into drafts.</p></div></div>
+  <section class="card hf composer">
+    <h2>Pitch an idea</h2>
+    <label for="itTitle">Idea</label><input id="itTitle" maxlength="200" placeholder="e.g. Why the Silk Road was really about paper">
+    <label for="itNotes">Notes (optional)</label><textarea id="itNotes" maxlength="8000" placeholder="Angle, sources, rant potential…"></textarea>
+    <div class="acts"><button class="go" id="itShare" type="button">Share idea</button><span id="itMsg" class="mute"></span></div>
+  </section>
+  <div class="ideas-bar"><div class="chips" id="itFilters"></div><input id="itSearch" class="search" type="search" placeholder="Search ideas"></div>
+  <div id="itStatus" class="status" role="status" aria-live="polite"></div>
+  <div id="itList"></div>
+</main>
+<script src="/emoji.js"></script>
+<script src="/host/shell.js"></script>
+<script src="/host/tts.js"></script>
+<script src="/host/ideas.js"></script>
+</body></html>

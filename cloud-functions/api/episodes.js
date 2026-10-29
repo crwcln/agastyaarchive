@@ -5,6 +5,21 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 const CHUNK = 2 * 1024 * 1024, MAX_CHUNKS = 500;
 const pad = i => String(i).padStart(5, "0");
+// Global reactions: one blob per visitor+reaction (reactions/v/<episode>/<reaction>/<visitor>), recounted into reactions/c/<episode>.json
+const REACTIONS = ["fire", "laugh", "mindblown", "insight"];
+// Host collaboration: shared ideas board and drafts (neither is ever exposed by the public GET)
+const IDEA_STATUS = ["new", "discussing", "planned", "recorded", "parked"], ID_RE = /^[a-z0-9]{6,20}$/;
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const clip = (v, n) => String(v == null ? "" : v).slice(0, n);
+const person = p => ({ name: clip(p && p.name, 40).trim() || "Someone", role: p && p.role === "Co-host" ? "Co-host" : "Host" });
+const readAll = async (store, prefix) => {
+  const { blobs } = await store.list({ prefix, consistency: "strong" });
+  return (await Promise.all(blobs.map(o => store.get(o.key, { type: "json" }).catch(() => null)))).filter(Boolean);
+};
+const dropAudio = async (store, id) => { const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" }); for (const o of blobs) await store.delete(o.key); };
+const cleanWords = words => Array.isArray(words) ? words.slice(0, 30000).map(w => ({ word: clip(w.word, 100), start: Number(w.start), end: Number(w.end) })).filter(w => w.word && Number.isFinite(w.start) && Number.isFinite(w.end) && w.start >= 0 && w.end >= w.start) : [];
+const newestFirst = (a, c) => Date.parse(c.updatedAt) - Date.parse(a.updatedAt);
+const reactionTotals = c => Object.fromEntries(REACTIONS.map(r => [r, Math.max(0, Number(c && c[r]) || 0)]));
 const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length === y.length && timingSafeEqual(x, y); };
 const interactionFailure = result => {
@@ -27,7 +42,9 @@ async function handle(context) {
 
   if (request.method === "GET") {
     const idx = await load(), now = Date.now();
-    return json({ episodes: idx.episodes.filter(e => !e.publishAt || Date.parse(e.publishAt) <= now) });
+    const episodes = idx.episodes.filter(e => !e.publishAt || Date.parse(e.publishAt) <= now);
+    const counts = await Promise.all(episodes.map(e => store.get(`reactions/c/${e.id}.json`, { type: "json" }).catch(() => null)));
+    return json({ episodes: episodes.map((e, i) => ({ ...e, reactions: reactionTotals(counts[i]) })) });
   }
   if (request.method !== "POST" && request.method !== "PUT") return json({ error: "Method not allowed" }, 405);
 
@@ -46,6 +63,19 @@ async function handle(context) {
       await store.setJSON(key, { episodeId: id, localHour, recordedAt: new Date().toISOString() });
       return json({ ok: true });
     }
+    if (b.action === "react") {
+      const id = String(b.id || ""), listener = String(b.listener || ""), reaction = b.reaction === null || b.reaction === "" || b.reaction === undefined ? null : String(b.reaction);
+      if (!/^[a-z0-9]{6,20}$/.test(id) || !/^[a-f0-9]{32}$/.test(listener) || (reaction !== null && !REACTIONS.includes(reaction))) return json({ error: "Bad reaction" }, 400);
+      const idx = await load(), episode = idx.episodes.find(item => item.id === id);
+      if (!episode || (episode.publishAt && Date.parse(episode.publishAt) > Date.now())) return json({ error: "Episode not found" }, 404);
+      const visitor = createHash("sha256").update("reaction|" + listener).digest("hex").slice(0, 40), keyFor = r => `reactions/v/${id}/${r}/${visitor}`;
+      await Promise.all(REACTIONS.filter(r => r !== reaction).map(r => store.delete(keyFor(r)).catch(() => {})));
+      if (reaction) await store.setJSON(keyFor(reaction), { at: new Date().toISOString() });
+      const totals = {};
+      await Promise.all(REACTIONS.map(async r => { const { blobs } = await store.list({ prefix: `reactions/v/${id}/${r}/`, consistency: "strong" }); totals[r] = blobs.length; }));
+      await store.setJSON(`reactions/c/${id}.json`, totals);
+      return json({ ok: true, reactions: totals, selected: reaction });
+    }
   }
 
   if (!env.ADMIN_PASSWORD || !same(request.headers.get("x-admin-password"), env.ADMIN_PASSWORD)) {
@@ -62,6 +92,88 @@ async function handle(context) {
   }
 
   if (b.action === "check") return json({ ok: true });
+
+  // ---- ideas board ----
+  if (b.action === "list-ideas") return json({ ideas: (await readAll(store, "ideas/")).sort(newestFirst) });
+  if (b.action === "save-idea") {
+    const id = b.id ? String(b.id) : newId(), key = `ideas/${id}.json`;
+    if (!ID_RE.test(id)) return json({ error: "Bad idea id" }, 400);
+    const old = b.id ? await store.get(key, { type: "json" }).catch(() => null) : null;
+    if (b.id && !old) return json({ error: "Idea not found" }, 404);
+    const title = clip(b.title !== undefined ? b.title : old && old.title, 200).trim();
+    if (!title) return json({ error: "Give the idea a title." }, 400);
+    const now = new Date().toISOString(), by = person(b.by);
+    const idea = { id, title, notes: clip(b.notes !== undefined ? b.notes : old && old.notes, 8000).trim(),
+      status: IDEA_STATUS.includes(b.status) ? b.status : (old && old.status) || "new",
+      author: old ? old.author : by, createdAt: old ? old.createdAt : now, updatedAt: now, updatedBy: by, comments: old ? old.comments : [] };
+    await store.setJSON(key, idea);
+    return json({ ok: true, idea });
+  }
+  if (b.action === "comment-idea") {
+    const id = String(b.id || ""), text = clip(b.text, 2000).trim();
+    if (!ID_RE.test(id)) return json({ error: "Bad idea id" }, 400);
+    if (!text) return json({ error: "Write a comment first." }, 400);
+    const key = `ideas/${id}.json`, idea = await store.get(key, { type: "json" }).catch(() => null);
+    if (!idea) return json({ error: "Idea not found" }, 404);
+    if (idea.comments.length >= 300) return json({ error: "This thread is full." }, 400);
+    const now = new Date().toISOString(), by = person(b.by);
+    idea.comments.push({ id: newId(), author: by, text, at: now });
+    idea.updatedAt = now; idea.updatedBy = by;
+    await store.setJSON(key, idea);
+    return json({ ok: true, idea });
+  }
+  if (b.action === "delete-idea") {
+    const id = String(b.id || "");
+    if (!ID_RE.test(id)) return json({ error: "Bad idea id" }, 400);
+    await store.delete(`ideas/${id}.json`).catch(() => {});
+    return json({ ok: true });
+  }
+
+  // ---- drafts: an episode in progress (text, notes, transcript and optionally audio), never public ----
+  if (b.action === "list-drafts") {
+    const drafts = await readAll(store, "drafts/");
+    return json({ drafts: drafts.sort(newestFirst).map(d => ({ id: d.id, title: d.title, unit: d.unit, desc: clip(d.desc, 200), hasNotes: !!d.notes, ideaId: d.ideaId || null,
+      audio: d.audio ? { size: d.audio.size } : null, author: d.author, updatedBy: d.updatedBy, createdAt: d.createdAt, updatedAt: d.updatedAt })) });
+  }
+  if (b.action === "get-draft") {
+    const id = String(b.id || "");
+    if (!ID_RE.test(id)) return json({ error: "Bad draft id" }, 400);
+    const draft = await store.get(`drafts/${id}.json`, { type: "json" }).catch(() => null);
+    return draft ? json({ draft }) : json({ error: "Draft not found" }, 404);
+  }
+  if (b.action === "save-draft") {
+    const e = b.draft || {}, by = person(b.by), id = e.id ? String(e.id) : newId(), key = `drafts/${id}.json`;
+    if (!ID_RE.test(id)) return json({ error: "Bad draft id" }, 400);
+    const old = e.id ? await store.get(key, { type: "json" }).catch(() => null) : null;
+    if (e.id && !old) return json({ error: "Draft not found" }, 404);
+    let audio = null; // {keep:true} keeps the saved audio, null removes it, an object replaces it
+    if (e.audio && e.audio.keep) audio = old ? old.audio : null;
+    else if (e.audio) {
+      const aid = String(e.audio.id || ""), chunks = Math.floor(+e.audio.chunks), size = Math.floor(+e.audio.size);
+      if (!ID_RE.test(aid) || !(chunks >= 1 && chunks <= MAX_CHUNKS && size > (chunks - 1) * CHUNK && size <= chunks * CHUNK)) return json({ error: "Bad audio details" }, 400);
+      const { blobs } = await store.list({ prefix: `audio/${aid}/`, consistency: "strong" });
+      if (blobs.length !== chunks) return json({ error: `Expected ${chunks} audio parts, found ${blobs.length}` }, 400);
+      audio = { id: aid, size, chunks, type: /^audio\/[\w.+-]+$/.test(e.audio.type) ? e.audio.type : "audio/webm" };
+    }
+    if (old && old.audio && (!audio || audio.id !== old.audio.id)) await dropAudio(store, old.audio.id); // replaced or removed
+    const now = new Date().toISOString();
+    const draft = { id, title: clip(e.title, 200).trim(), unit: clip(e.unit, 80), date: /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : "",
+      rant: Math.min(5, Math.max(1, +e.rant || 3)), desc: clip(e.desc, 5000), notes: clip(e.notes, 20000), transcript: clip(e.transcript, 200000),
+      transcriptWords: cleanWords(e.transcriptWords), chapters: clip(e.chapters, 5000), whenLocal: clip(e.whenLocal, 20),
+      ideaId: ID_RE.test(String(e.ideaId || "")) ? String(e.ideaId) : (old && old.ideaId) || null, audio,
+      author: old ? old.author : by, createdAt: old ? old.createdAt : now, updatedAt: now, updatedBy: by };
+    await store.setJSON(key, draft);
+    return json({ ok: true, draft });
+  }
+  if (b.action === "delete-draft") {
+    const id = String(b.id || "");
+    if (!ID_RE.test(id)) return json({ error: "Bad draft id" }, 400);
+    const draft = await store.get(`drafts/${id}.json`, { type: "json" }).catch(() => null);
+    if (!draft) return json({ error: "Draft not found" }, 404);
+    await store.delete(`drafts/${id}.json`);
+    if (draft.audio && !b.keepAudio) await dropAudio(store, draft.audio.id); // keepAudio: the audio now belongs to a published episode
+    return json({ ok: true });
+  }
 
   if (b.action === "upload-start") {
     const n = Math.floor(+b.parts);
@@ -308,6 +420,11 @@ async function handle(context) {
     await store.setJSON("episodes.json", idx);
     const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" });
     for (const o of blobs) await store.delete(o.key);
+    try { // best effort: drop the episode's reactions too
+      const { blobs: votes } = await store.list({ prefix: `reactions/v/${id}/`, consistency: "strong" });
+      for (const o of votes) await store.delete(o.key);
+      await store.delete(`reactions/c/${id}.json`);
+    } catch (e) {}
     return json({ ok: true });
   }
   return json({ error: "Unknown action" }, 400);
