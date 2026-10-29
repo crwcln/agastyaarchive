@@ -15,11 +15,11 @@ if(FEATURES.episodeDrafts===false)$("hpsavedraft").hidden=true;
 UNITS.forEach(u=>$("hpunit").append(new Option(u,u)));
 [1,2,3,4,5].forEach(n=>$("hprant").append(new Option("\u{1F525}".repeat(n),n,false,n===4)));
 $("hpdate").value=new Date().toISOString().slice(0,10);
-const recordParams=new URLSearchParams(location.search);
+const recordParams=new URLSearchParams(location.hash.includes("?")?location.hash.slice(location.hash.indexOf("?")+1):location.search.slice(1));
 if(recordParams.has("title"))$("hptitle").value=recordParams.get("title").slice(0,200);
 if(UNITS.includes(recordParams.get("unit")))$("hpunit").value=recordParams.get("unit");
 let pw=HOST.pw(),stream,rec,chunks=[],blob=null,transcriptWords=[],uploadId=null,uploadedBlob=null,uploadedParts=0,savedAudioId=null,draftId=null,t0=0,acc=0,tick=null;
-const msg=t=>$("hpmsg").textContent=t;
+const msg=t=>{$("hpmsg").textContent=t;if(/failed|couldn.t|error/i.test(t))HOST.notify(t,"error")};
 const fmtT=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 const elapsed=()=>acc+(rec&&rec.state==="recording"?(Date.now()-t0)/1000:0);
 async function uploadPart(id,index,part){
@@ -86,6 +86,8 @@ function clearAudio(){
 const studio=Studio.create({
   markers:FEATURES.autoChapters===true,
   hasAudio:()=>!!blob,
+  getAudio:()=>blob,
+  confirm:HOST.confirm,
   onStart:()=>{clearAudio();$("hppub").disabled=true},
   onAudio:b=>{const keep=$("hpchapters").value;setAudio(b);$("hpchapters").value=keep;$("hppub").disabled=false},
   onDiscard:clearAudio,
@@ -116,12 +118,15 @@ $("hpsavedraft").onclick=async()=>{
     }});
     draftId=saved.draft.id;savedAudioId=saved.draft.audio&&saved.draft.audio.id||null;
     if(blob&&uploadId===savedAudioId)uploadedBlob=blob;
-    $("hpsavedraft").textContent="Update draft";msg("Draft saved. Find it on the dashboard whenever you’re ready to continue.");
+    $("hpsavedraft").textContent="Update draft";msg("Draft saved. Find it on the dashboard whenever you’re ready to continue.");HOST.notify("Draft saved.");
   }catch(e){msg("Couldn’t save draft: "+e.message)}
   finally{btn.disabled=false;prog.hidden=true}
 };
-async function loadDraft(){
-  const params=new URLSearchParams(location.search),id=params.get("draft");
+async function loadDraft(id){
+  if(id===undefined){
+    const params=new URLSearchParams(location.hash.includes("?")?location.hash.slice(location.hash.indexOf("?")+1):location.search.slice(1));
+    id=params.get("draft");
+  }
   if(!id||FEATURES.episodeDrafts===false)return;
   const btn=$("hpsavedraft");let loaded=false;btn.disabled=true;msg("Loading draft…");
   try{
@@ -151,6 +156,15 @@ async function loadDraft(){
 }
 $("hpsavedraft").hidden=FEATURES.episodeDrafts===false;
 loadDraft();
+window.addEventListener("host-route-query",event=>{
+  if(event.detail.view!=="record")return;
+  const params=new URLSearchParams(event.detail.query||"");
+  if(params.has("draft"))loadDraft(params.get("draft"));
+  else{
+    if(params.has("title"))$("hptitle").value=params.get("title").slice(0,200);
+    if(params.has("unit")&&UNITS.includes(params.get("unit")))$("hpunit").value=params.get("unit");
+  }
+});
 $("hptranscribe").onclick=async()=>{
   const btn=$("hptranscribe"),prog=$("hpprog"),status=$("hptranscribeStatus");
   if(!blob){status.textContent="Choose or record an audio file first.";status.dataset.error="true";msg(status.textContent);return}
@@ -236,7 +250,8 @@ msg("Preparing upload…");
     msg("Publishing…");
     const publishAt=$("hpwhen").value?new Date($("hpwhen").value).toISOString():null;
     const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,publishAt,rant:+$("hprant").value,desc:$("hpdesc").value,transcript:$("hptr").value,transcriptWords,chapters:parseChapterLines(),size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
-    if(res.episode.publishAt)msg("Episode "+res.episode.num+" scheduled for "+new Date(res.episode.publishAt).toLocaleString());else msg("Live! Episode "+res.episode.num+" is published.");
+    if(res.episode.publishAt){msg("Episode "+res.episode.num+" scheduled for "+new Date(res.episode.publishAt).toLocaleString());HOST.notify("Episode scheduled.")}
+    else{msg("Live! Episode "+res.episode.num+" is published.");HOST.notify("Episode published.")}
     if(draftId){
       try{await api({action:"delete-draft",id:draftId,keepAudio:savedAudioId===res.episode.id})}
       catch(e){msg("Episode published, but the draft could not be removed: "+e.message)}

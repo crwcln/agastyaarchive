@@ -1,12 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-labelledby="title desc">
-  <title id="title">The Agastya Archive</title>
-  <desc id="desc">An archival seal combining an A monogram, open book, and audio waveform.</desc>
-  <circle cx="60" cy="60" r="57" fill="#b84a17" stroke="#9a6f12" stroke-width="3"/>
-  <circle cx="60" cy="60" r="49" fill="none" stroke="#f4ecdc" stroke-opacity=".5" stroke-width="1.5"/>
-  <path d="M34 78 60 31l26 47" fill="none" stroke="#f4ecdc" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M45 63h30" fill="none" stroke="#e0b04a" stroke-width="4" stroke-linecap="round"/>
-  <path d="M54 63v-5m6 5V52m6 11v-7" fill="none" stroke="#e0b04a" stroke-width="3" stroke-linecap="round"/>
-  <path d="M29 80q16-5 31 5 15-10 31-5v13q-16-4-31 7-15-11-31-7z" fill="#f4ecdc" stroke="#2a1f16" stroke-width="2" stroke-linejoin="round"/>
-  <path d="M60 85v15" stroke="#b84a17" stroke-width="2"/>
-  <path d="M36 85q12-3 20 2m28-2q-12-3-20 2" fill="none" stroke="#9a6f12" stroke-width="1.5" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">The Agastya Archive emblem</title>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8edda"/>
+      <stop offset="1" stop-color="#dfc99e"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d47736"/>
+      <stop offset="1" stop-color="#8f321b"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="#211710"/>
+  <circle cx="64" cy="64" r="53" fill="url(#paper)" stroke="#bb762c" stroke-width="2"/>
+  <path d="M25 92V38q19-7 39 5 20-12 39-5v54q-19-7-39 5-20-12-39-5Z" fill="#fbf5e9" stroke="#57321d" stroke-linejoin="round" stroke-width="3"/>
+  <path d="M64 44v52M33 49q13-3 24 3M33 60q13-3 24 3M33 71q13-3 24 3M71 52q11-6 24-3M71 63q11-6 24-3M71 74q11-6 24-3" fill="none" stroke="#b89971" stroke-linecap="round" stroke-width="2"/>
+  <path d="m47 86 17-44 17 44h-9l-8-22-8 22Z" fill="url(#ink)" stroke="#5b2819" stroke-linejoin="round" stroke-width="2"/>
+  <path d="M55 72h18" stroke="#f8edda" stroke-linecap="round" stroke-width="3"/>
+  <path d="M18 64h8m76 0h8M64 18v7m0 78v7" stroke="#bb762c" stroke-linecap="round" stroke-width="3"/>
 </svg>

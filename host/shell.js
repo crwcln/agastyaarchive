@@ -16,8 +16,23 @@ async function api(body){
 function header(){
   const page=document.body.dataset.page,link=(p,href,label)=>`<a href="${href}"${p===page?' class="on"':""}>${label}</a>`;
   $("hdr").innerHTML=`<header class="hbar"><a class="brand" href="/host/"><img src="/logo.svg" alt=""><span>The Agastya Archive</span><em>Host</em></a>
-<nav class="hnav">${link("dashboard","/host/","Dashboard")}${link("record","/host/record.html","Record")}${FEATURES.hostIdeas!==false?link("ideas","/host/ideas.html","Ideas"):""}</nav>
-<div class="hright"><span class="who" id="hwho" hidden></span><button type="button" id="hswitch" hidden>Switch</button><a class="btn" href="/">View site ↗</a><button type="button" id="hlock">Lock</button></div></header>`;
+<nav class="hnav">${link("dashboard","/host/#dashboard","Dashboard")}${link("record","/host/#record","Record")}${FEATURES.hostIdeas!==false?link("ideas","/host/#ideas","Ideas"):""}</nav>
+<div class="hright"><button type="button" id="hchangelog">What’s new</button><span class="who" id="hwho" hidden></span><button type="button" id="hswitch" hidden>Switch</button><a class="btn" href="/">View site ↗</a><button type="button" id="hlock">Lock</button></div></header>`;
+  if(!$("toastStack")){const stack=document.createElement("div");stack.id="toastStack";stack.className="toast-stack";stack.setAttribute("aria-live","polite");stack.setAttribute("aria-atomic","false");document.body.append(stack)}
+  if(!$("hostDialog")){
+    const dialog=document.createElement("dialog");dialog.id="hostDialog";dialog.className="host-dialog";dialog.innerHTML='<form method="dialog"><h2 id="hostDialogTitle"></h2><p id="hostDialogMessage"></p><div class="acts"><button value="cancel" id="hostDialogCancel">Cancel</button><button class="go" value="confirm" id="hostDialogConfirm">Continue</button></div></form>';document.body.append(dialog);
+  }
+  if(!$("hostDialog").open){
+    const dialog=$("hostDialog"),title=$("hostDialogTitle"),message=$("hostDialogMessage"),cancel=$("hostDialogCancel"),confirmButton=$("hostDialogConfirm");
+    const ask=(heading,body,confirmLabel="Continue")=>new Promise(resolve=>{
+      title.textContent=heading;message.textContent=body;cancel.hidden=false;confirmButton.textContent=confirmLabel;
+      dialog.returnValue="cancel";
+      dialog.addEventListener("close",()=>resolve(dialog.returnValue==="confirm"),{once:true});
+      dialog.showModal();
+    });
+    $("hchangelog").onclick=()=>ask("What’s new · v"+(window.SITE_CONFIG&&window.SITE_CONFIG.version||"1.0.0"),"New in this release:\n• Dashboard, Record, and Ideas now share a smooth, single-page host studio.\n• Faster dashboard loading, with analytics loading separately.\n• Edit recordings on the waveform with trim, cut, replace, and undo.\n• Custom confirmations and status notifications.\n• Public episode comments and a host comment inbox.\n• New Archive logo and faster loading states.","Close").then(()=>{});
+    window.__hostDialog=ask;
+  }
   if(identity){$("hwho").hidden=$("hswitch").hidden=false;$("hwho").textContent=identity.name+" · "+identity.role;
     $("hswitch").addEventListener("click",()=>{try{localStorage.removeItem("aa_host_identity")}catch(e){}location.reload()})}
   $("hlock").addEventListener("click",()=>{try{sessionStorage.removeItem("hp_pw")}catch(e){}location.reload()});
@@ -59,5 +74,13 @@ async function start(){
   showGate();
 }
 start();
-return{api,features:FEATURES,pw:()=>pw,who:()=>identity,ready:cb=>unlocked?cb():cbs.push(cb)};
+function notify(message,type="success"){
+  const stack=$("toastStack");if(!stack){console.log(message);return}
+  const toast=document.createElement("div");toast.className="host-toast "+type;toast.textContent=message;toast.setAttribute("role",type==="error"?"alert":"status");
+  stack.append(toast);requestAnimationFrame(()=>toast.classList.add("shown"));setTimeout(()=>{toast.classList.remove("shown");setTimeout(()=>toast.remove(),220)},4200);
+}
+function confirmAction(message,heading="Are you sure?"){
+  return window.__hostDialog?window.__hostDialog(heading,message,"Continue"):Promise.resolve(window.confirm(message));
+}
+return{api,features:FEATURES,pw:()=>pw,who:()=>identity,ready:cb=>unlocked?cb():cbs.push(cb),notify,confirm:confirmAction};
 })();

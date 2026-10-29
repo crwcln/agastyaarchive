@@ -48,10 +48,25 @@ nav b{color:var(--gold)}
 .reaction-note{align-self:center;font-size:12px;color:var(--mute)}
 audio{width:100%;height:42px}
 .custom-player{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;margin-top:10px;padding:11px 13px;background:color-mix(in srgb,var(--bg) 72%,var(--surface));border:1px solid var(--line);border-radius:6px}.custom-player .ep-stream{display:none}.player-toggle{width:44px;height:44px;border:0;border-radius:50%;background:var(--accent);color:var(--btn);font:700 18px 'Space Grotesk',sans-serif;cursor:pointer;transition:transform .18s,background .18s}.player-toggle:hover{transform:scale(1.06);background:var(--gold)}.player-toggle:focus-visible,.player-speed:focus-visible,.player-seek:focus-visible{outline:3px solid var(--gold);outline-offset:3px}.player-main{min-width:0}.player-seek{appearance:none;display:block;width:100%;height:6px;margin:6px 0 12px;border-radius:99px;background:linear-gradient(to right,var(--accent) var(--progress,0%),var(--line) var(--progress,0%));cursor:pointer}.player-seek::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-seek::-moz-range-thumb{width:12px;height:12px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.player-meta{display:flex;justify-content:space-between;gap:10px;color:var(--mute);font-size:11px;line-height:1.3}.player-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.player-speed{min-width:48px;padding:7px 8px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--ink);font:700 12px 'Space Grotesk',sans-serif;cursor:pointer}.player-speed:hover{border-color:var(--accent);color:var(--accent)}@media(max-width:420px){.custom-player{grid-template-columns:42px minmax(0,1fr) 42px;gap:9px;padding:10px}.player-toggle{width:40px;height:40px}.player-speed{min-width:42px;padding:6px 4px}.player-meta{font-size:10px}}.chapters{margin:0 0 12px;border-top:1px solid var(--line);padding-top:10px}.chapters summary{color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.chapter-list{display:grid;gap:4px;margin:10px 0 0;padding:0;list-style:none}.chapter-list button{display:flex;gap:10px;width:100%;padding:7px 9px;border:0;border-radius:4px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer}.chapter-list button:hover{background:color-mix(in srgb,var(--accent) 12%,transparent)}.chapter-list time{flex:none;color:var(--accent);font-variant-numeric:tabular-nums;font-weight:700}.transcript{margin:0 0 12px;border-top:1px solid var(--line);padding-top:10px}.transcript summary{color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.transcript-text{max-width:72ch;margin-top:10px;color:var(--mute);font-size:14px;line-height:1.8}.transcript-text p{margin:0 0 1em}.transcript-text p:last-child{margin-bottom:0}.transcript-word{border-radius:3px;cursor:pointer;transition:background-color .08s,color .08s}.transcript-word:hover{background:color-mix(in srgb,var(--accent) 25%,transparent)}.transcript-word.active{background:var(--accent);color:var(--btn);box-shadow:0 0 0 2px var(--accent)}.transcript-text::selection,.transcript-word::selection{background:var(--accent);color:var(--btn)}.noaudio{font-size:13px;color:var(--mute);font-style:italic}
+.episode-comments{margin:12px 0 0;border-top:1px solid var(--line);padding-top:10px}.episode-comments summary{color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}
+.comment-list{display:grid;gap:8px;margin:10px 0}.public-comment{padding:10px 12px;border-left:3px solid var(--gold);background:color-mix(in srgb,var(--bg) 72%,var(--surface));border-radius:0 5px 5px 0}
+.public-comment b{font-size:12px}.public-comment time{margin-left:8px;color:var(--mute);font-size:11px}.public-comment p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.comment-form{display:grid;gap:8px;margin:12px 0}.comment-form input,.comment-form textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);font:inherit}
+.comment-form textarea{min-height:84px;resize:vertical}.comment-form small{color:var(--mute);font-size:11px}.comment-honeypot{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}
+.site-toast-stack{position:fixed;right:18px;bottom:18px;z-index:80;display:grid;gap:9px;max-width:min(420px,calc(100vw - 36px))}
+.site-toast{padding:12px 16px;border:1px solid var(--gold);border-left:4px solid var(--accent);border-radius:7px;background:var(--surface);color:var(--ink);box-shadow:0 8px 26px #0003;opacity:0;transform:translateY(12px);transition:opacity .2s,transform .2s}
+.site-toast.shown{opacity:1;transform:none}.site-toast.error{border-left-color:#d45c4c}
+.site-dialog{width:min(420px,calc(100vw - 32px));padding:22px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 20px 70px #0006}
+.site-dialog::backdrop{background:#100d0bcc;backdrop-filter:blur(4px)}.site-dialog p{color:var(--mute)}.site-dialog .acts{display:flex;justify-content:flex-end;gap:8px}
+.episode-loading{display:flex;align-items:center;justify-content:center;gap:12px;min-height:110px;color:var(--mute)}.episode-loader{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:siteSpin .8s linear infinite}
+@keyframes siteSpin{to{transform:rotate(360deg)}}
 .empty{border:2px dashed var(--line);border-radius:6px;padding:36px 20px;text-align:center;color:var(--mute)}
 .about{display:grid;gap:12px}
 .about p{margin:0;color:var(--mute)}
 .credits{color:var(--mute);font-size:13px}
+.changelog{margin-top:24px;padding-top:12px;border-top:1px solid var(--line);color:var(--mute);font-size:13px}
+.changelog summary{cursor:pointer;color:var(--accent);font-weight:700}
+.changelog ul{margin:8px 0;padding-left:22px}
 footer{padding:36px 0 48px;color:var(--mute);font-size:13px;text-align:center}
 
 /* ---------- motion ---------- */
@@ -127,7 +142,7 @@ nav{animation:rise .7s both}
   <section id="episodes">
     <div class="sec"><h2>Episodes</h2><span id="count"></span></div>
     <div class="chips" id="chips"></div>
-    <div id="list"></div>
+    <div id="list"><div class="episode-loading" role="status"><span class="episode-loader"></span>Loading episodes…</div></div>
   </section>
 
   <div class="rule"></div>
@@ -138,13 +153,25 @@ nav{animation:rise .7s both}
     <p>Expect strong opinions, tangents, and at least one “wait, that’s actually insane.”</p>
   </section>
 
+  <details class="changelog"><summary>What’s new · v<span id="changeVersion"></span></summary><ul><li>Host tools now switch smoothly inside one studio.</li><li>Recordings can be trimmed, cut, replaced, and undone.</li><li>Public episode discussions with host comment management.</li><li>New Archive emblem and faster loading states.</li></ul></details>
   <footer>© The Agastya Archive · Not an official College Board product, please don’t sue. · v<span id="siteVersion"></span></footer>
 </div>
+<div class="site-toast-stack" id="siteToasts" aria-live="polite" aria-atomic="false"></div>
+<dialog class="site-dialog" id="siteDialog"><form method="dialog"><h3 id="siteDialogTitle">Confirm</h3><p id="siteDialogMessage"></p><div class="acts"><button value="cancel">Cancel</button><button class="go" value="confirm">Continue</button></div></form></dialog>
 
 <script>
 const SITE_CONFIG=window.SITE_CONFIG||{},SITE_VERSION=SITE_CONFIG.version||"1.0.0",FEATURES=SITE_CONFIG.features||{};
 let filter="All",eps=[],adminPw=null,err="",initialEpisodesLoaded=false,pendingEpisodeRefresh=false,episodeRefreshBusy=false,analyticsListener="";
 const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(x==="class")e.className=a[x];else if(x.startsWith("on"))e[x]=a[x];else e.setAttribute(x,a[x])}for(const c of k.flat())if(c!=null)e.append(c);return e};
+function siteNotify(message,type="success"){
+  const toast=h("div",{class:"site-toast "+type,role:type==="error"?"alert":"status"},message),stack=document.getElementById("siteToasts");
+  stack.append(toast);requestAnimationFrame(()=>toast.classList.add("shown"));setTimeout(()=>{toast.classList.remove("shown");setTimeout(()=>toast.remove(),220)},4200);
+}
+window.siteNotify=siteNotify;
+function siteConfirm(message,title="Are you sure?"){
+  const dialog=document.getElementById("siteDialog");dialog.querySelector("#siteDialogTitle").textContent=title;dialog.querySelector("#siteDialogMessage").textContent=message;dialog.returnValue="cancel";
+  return new Promise(resolve=>{dialog.addEventListener("close",()=>resolve(dialog.returnValue==="confirm"),{once:true});dialog.showModal()});
+}
 const fmt=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
 function getAnalyticsListener(){
   if(analyticsListener)return analyticsListener;
@@ -235,6 +262,7 @@ function reactionView(episode){
   }));
 }
 document.getElementById("siteVersion").textContent=SITE_VERSION;
+document.getElementById("changeVersion").textContent=SITE_VERSION;
 const updateBanner=document.getElementById("updateBanner"),updateMessage=document.getElementById("updateMessage");
 if(FEATURES.updateNotices===false)updateBanner.hidden=true;
 document.getElementById("dismissUpdate").onclick=()=>{updateBanner.hidden=true};
@@ -318,9 +346,54 @@ if(FEATURES.liveEpisodeUpdates!==false){
 }
 window.loadEpisodes=load;window.setAdmin=pw=>{adminPw=pw;render()};
 async function del(e){
-  if(!confirm("Delete \u201c"+e.title+"\u201d for good?"))return;
-  try{const r=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":adminPw},body:JSON.stringify({action:"delete",id:e.id})});if(!r.ok)throw 0;load()}
-  catch(x){alert("Couldn\u2019t delete.")}
+  if(!await siteConfirm("Delete \u201c"+e.title+"\u201d for good?","Delete episode"))return;
+  try{const r=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":adminPw},body:JSON.stringify({action:"delete",id:e.id})});if(!r.ok)throw new Error("HTTP "+r.status);siteNotify("Episode deleted.");load()}
+  catch(x){siteNotify("Couldn\u2019t delete episode: "+x.message,"error")}
+}
+function commentVisitor(){
+  const key="aa_comment_visitor";let value="";
+  try{value=localStorage.getItem(key)||""}catch(e){}
+  if(!/^[a-f0-9]{32}$/.test(value)){const bytes=new Uint8Array(16);if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(bytes);else for(let i=0;i<bytes.length;i++)bytes[i]=Math.floor(Math.random()*256);value=Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");try{localStorage.setItem(key,value)}catch(e){}}
+  return value;
+}
+function commentsView(episode){
+  const comments=h("div",{class:"comment-list"}),nameInput=h("input",{maxlength:"40",required:"",placeholder:"Your name","aria-label":"Your name"}),textInput=h("textarea",{maxlength:"2000",required:"",placeholder:"Add to the discussion…","aria-label":"Your comment"}),trap=h("input",{type:"text",name:"company",tabindex:"-1","aria-hidden":"true",autocomplete:"off"});
+  try{nameInput.value=localStorage.getItem("aa_comment_name")||""}catch(e){}
+  const note=h("small",null,"Comments are public and appear immediately. Please keep personal information private.");
+  const status=h("small",{role:"status","aria-live":"polite"}),send=h("button",{type:"submit",class:"go"},"Post comment");
+  const form=h("form",{class:"comment-form"},nameInput,textInput,h("label",{class:"comment-honeypot"},"Leave this field empty",trap),note,h("div",{class:"acts"},send,status));
+  const renderComments=list=>{
+    comments.replaceChildren();
+    if(!list.length){comments.append(h("small",{class:"mute"},"No comments yet. Start the conversation."));return}
+    list.forEach(comment=>comments.append(h("article",{class:"public-comment"},h("b",null,comment.name),h("time",{dateTime:comment.createdAt},new Date(comment.createdAt).toLocaleString()),h("p",null,comment.text))));
+  };
+  let loaded=false;
+  const detail=h("details",{class:"episode-comments"},
+    h("summary",null,"Comments & discussion"),
+    h("div",null,comments,form));
+  detail.addEventListener("toggle",async()=>{
+    if(!detail.open||loaded)return;
+    loaded=true;comments.textContent="Loading comments…";
+    try{
+      const response=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"list-comments",id:episode.id})});
+      const data=await response.json();if(!response.ok)throw new Error(data.error||"HTTP "+response.status);renderComments(data.comments||[]);
+    }catch(error){loaded=false;comments.textContent="Couldn’t load comments: "+error.message}
+  });
+  form.addEventListener("submit",async event=>{
+    event.preventDefault();const name=nameInput.value.trim(),text=textInput.value.trim();
+    if(!name||!text){status.textContent="Enter your name and comment.";return}
+    send.disabled=true;status.textContent="Posting…";
+    try{
+      const response=await fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"post-comment",id:episode.id,name,text,visitor:commentVisitor(),company:trap.value})});
+      const data=await response.json();if(!response.ok)throw new Error(data.error||"HTTP "+response.status);
+      try{localStorage.setItem("aa_comment_name",name)}catch(e){}
+      textInput.value="";loaded=true;
+      const existing=[...comments.querySelectorAll(".public-comment")].map(card=>({name:card.querySelector("b").textContent,createdAt:card.querySelector("time").dateTime,text:card.querySelector("p").textContent}));
+      existing.push(data.comment);renderComments(existing);status.textContent="";siteNotify("Your comment was posted.");
+    }catch(error){status.textContent=error.message;siteNotify("Couldn’t post comment: "+error.message,"error")}
+    finally{send.disabled=false}
+  });
+  return detail;
 }
 function bindTranscriptHighlight(audio){
   let elements=null,active=null;
@@ -413,7 +486,7 @@ function render(){
       h("h3",null,e.title),e.desc?h("p",null,e.desc):null,
       h("div",{class:"credits"},"Host: Agastya · Co-host: Marieke · Idea suggested by Mr. Thadhani · Development: Caleb"),
       chapterView(e),transcriptView(e),
-      reactionView(e),
+      commentsView(e),reactionView(e),
       playerFor(e.id));
     if(adminPw&&FEATURES.episodeDeletion!==false)c.append(h("button",{class:"del",onclick:()=>del(e)},"Delete"));
     list.append(c);

@@ -33,7 +33,7 @@ function card(i){
   const read=HOST&&window.TTS&&TTS.supported?h("button",{type:"button"},"🔊 Read aloud"):null;
   if(read)read.onclick=()=>TTS.quick(i.title+". "+(i.notes||""),read);
   const del=h("button",{type:"button",class:"danger"},"Delete");
-  del.onclick=async()=>{if(!confirm("Delete “"+i.title+"” and its comments?"))return;try{await api({action:"delete-idea",id:i.id});await load()}catch(e){say("Couldn’t delete: "+e.message)}};
+  del.onclick=async()=>{if(!await HOST.confirm("Delete “"+i.title+"” and its comments?","Delete idea"))return;try{await api({action:"delete-idea",id:i.id});await load()}catch(e){say("Couldn’t delete: "+e.message);HOST.notify("Couldn’t delete idea: "+e.message,"error")}};
   return h("article",{class:"idea","data-id":i.id},
     h("div",{class:"idea-top"},h("div",null,h("h3",null,i.title,fresh(i)?h("span",{class:"badge"},"New"):null),
       h("div",{class:"sub"},byline(i.author)+" · "+ago(i.createdAt)+(i.updatedAt!==i.createdAt?" · updated "+ago(i.updatedAt):""))),sel),

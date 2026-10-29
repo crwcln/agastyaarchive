@@ -27,10 +27,11 @@ function create(opts){
   const save=()=>{try{localStorage.setItem("aa_studio_v1",JSON.stringify({preset,S,ns,ec}))}catch(e){}};
   const el={studio:$("studio"),wave:$("stwave"),meter:$("stmeter"),dev:$("stdev"),empty:$("stempty"),review:$("streview"),
     start:$("hpstart"),pause:$("hppause"),mark:$("stmark"),check:$("stcheck"),play:$("stplay"),redo:$("stredo"),time:$("hptime"),total:$("sttotal"),clip:$("stclip"),mode:$("stmode")};
+  el.editor=$("steditor");el.selection=$("stselection");el.cut=$("stcut");el.trim=$("sttrim");el.replace=$("streplacefile");el.replaceLabel=$("streplaceLabel");el.undo=$("stundo");el.redoEdit=$("stredoedit");el.clear=$("stclear");
   const audio=$("hpprev");
   let ctx,stream,nodes={},rec,chunks=[],mime="",open=false,recording=false,paused=false,checking=false;
   let t0=0,acc=0,hist=[],roll=[],markers=[],pk=0,nextBar=0,raf=0,pl=0,gateTimer=0,gateThr=-80,holdUntil=0;
-  let mode="idle",peaks=null,curDur=0,lvl=-80,pkHold=-80,clipUntil=0,fileTok=0,seeking=false;
+  let mode="idle",peaks=null,curDur=0,lvl=-80,pkHold=-80,clipUntil=0,fileTok=0,seeking=false,dragStart=null,selection=null,undoStack=[],redoStack=[];
 
   /* ---------- filter rack UI ---------- */
   const outs={},ranges={};
@@ -132,6 +133,7 @@ function create(opts){
     if(mode==="review"&&!open&&!recording){
       if(!peaks||!peaks.length){g.fillStyle="rgba(241,231,211,.55)";g.textAlign="center";g.fillText("Waveform unavailable for this file. It will still play and publish.",W/2,mid);g.textAlign="left";return}
       const dur=curDur||audio.duration||1,n=Math.max(1,Math.floor((W-16)/step)),r=Math.min(1,cur()/dur);
+      if(selection){const left=8+selection.start/dur*(n*step),right=8+selection.end/dur*(n*step);g.fillStyle="rgba(224,176,74,.2)";g.fillRect(left,0,right-left,H);g.strokeStyle=C.gold;g.lineWidth=1;g.strokeRect(left+.5,.5,Math.max(0,right-left-1),H-1)}
       for(let i=0;i<n;i++){const s=Math.floor(i/n*peaks.length),e=Math.max(s+1,Math.floor((i+1)/n*peaks.length));let v=0;for(let k=s;k<e;k++)if(peaks[k]>v)v=peaks[k];
         const h=Math.max(2,amp(v)*(H-30));g.fillStyle=i/n<r?C.gold:"rgba(241,231,211,.38)";g.fillRect(8+i*step,mid-h/2,3,h)}
       const span=n*step;
@@ -160,17 +162,24 @@ function create(opts){
     el.mark.disabled=!(recording||mode==="review");el.empty.hidden=!(mode==="idle"&&!open&&!recording);
     el.review.hidden=!(mode==="review"&&!recording);el.dev.disabled=recording;
     el.play.classList.toggle("playing",!audio.paused&&mode==="review");
+    const editable=mode==="review"&&!recording&&!!(opts.hasAudio&&opts.hasAudio());
+    el.editor.hidden=!editable;
+    el.cut.disabled=el.trim.disabled=el.replace.disabled=el.clear.disabled=!editable||!selection;
+    el.replaceLabel.classList.toggle("disabled",!editable||!selection);
+    el.undo.disabled=!undoStack.length;
+    el.redoEdit.disabled=!redoStack.length;
+    el.selection.textContent=selection?clockT(selection.start)+" – "+clockT(selection.end):"None";
   }
 
   /* ---------- recording ---------- */
   async function start(){
     if(recording)return;
-    if(mode==="review"&&opts.hasAudio&&opts.hasAudio()&&!confirm("Replace the current recording? This can’t be undone."))return;
+    if(mode==="review"&&opts.hasAudio&&opts.hasAudio()&&!(await (opts.confirm?opts.confirm("Replace the current audio? This can’t be undone.","Replace recording"):Promise.resolve(window.confirm("Replace the current audio? This can’t be undone.")))))return;
     audio.pause();
     try{await openMic()}catch(e){opts.onMessage&&opts.onMessage("Mic blocked or unavailable: "+e.message);return}
     const mt=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||"";mime=mt;
     rec=new MediaRecorder(nodes.dest.stream,{...(mt?{mimeType:mt}:{}),audioBitsPerSecond:48000});
-    chunks=[];hist=[];markers=[];peaks=null;acc=0;mode="idle";
+    chunks=[];hist=[];markers=[];peaks=null;selection=null;undoStack=[];redoStack=[];acc=0;mode="idle";
     rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);rec.onstop=finish;
     rec.start(1000);recording=true;paused=false;t0=performance.now();nextBar=t0;
     opts.onStart&&opts.onStart();el.time.textContent=clockT(0);el.total.textContent="";ui();
@@ -197,18 +206,94 @@ function create(opts){
   if(opts.markers===false)el.mark.hidden=true;
 
   /* ---------- review ---------- */
-  function reset(){audio.pause();mode="idle";peaks=null;hist=[];markers=[];curDur=0;fileTok++;el.time.textContent=clockT(0);el.total.textContent="";ui();draw()}
-  el.redo.onclick=()=>{if(confirm("Discard this recording and start over?")){reset();opts.onDiscard&&opts.onDiscard()}};
+  function reset(){audio.pause();mode="idle";peaks=null;hist=[];markers=[];selection=null;undoStack=[];redoStack=[];curDur=0;fileTok++;el.time.textContent=clockT(0);el.total.textContent="";ui();draw()}
+  el.redo.onclick=async()=>{if(await (opts.confirm?opts.confirm("Discard this recording and start over?","Discard recording"):Promise.resolve(window.confirm("Discard this recording and start over?")))){reset();opts.onDiscard&&opts.onDiscard()}};
   el.play.onclick=()=>{if(mode!=="review")return;if(audio.paused){if(audio.ended)audio.currentTime=0;audio.play()}else audio.pause()};
   const playLoop=()=>{draw();el.time.textContent=clockT(cur());if(!audio.paused&&!audio.ended)pl=requestAnimationFrame(playLoop)};
   audio.addEventListener("play",()=>{if(mode!=="review")return;cancelAnimationFrame(pl);playLoop();ui()});
   ["pause","ended"].forEach(ev=>audio.addEventListener(ev,()=>{if(mode!=="review")return;ui();draw()}));
   audio.addEventListener("loadedmetadata",()=>{if(mode==="review"&&Number.isFinite(audio.duration)&&audio.duration>0){curDur=audio.duration;el.total.textContent="/ "+clockT(curDur);draw()}});
-  const seek=e=>{if(mode!=="review"||open||recording)return;const r=el.wave.getBoundingClientRect(),dur=curDur||audio.duration;if(!dur||!Number.isFinite(dur))return;
-    audio.currentTime=Math.max(0,Math.min(1,(e.clientX-r.left-8)/(r.width-16)))*dur;el.time.textContent=clockT(cur());draw()};
-  el.wave.addEventListener("pointerdown",e=>{seeking=true;el.wave.setPointerCapture(e.pointerId);seek(e)});
-  el.wave.addEventListener("pointermove",e=>{if(seeking)seek(e)});
-  ["pointerup","pointercancel"].forEach(ev=>el.wave.addEventListener(ev,()=>seeking=false));
+  const pointerTime=e=>{const r=el.wave.getBoundingClientRect(),dur=curDur||audio.duration;if(!dur||!Number.isFinite(dur))return null;return Math.max(0,Math.min(1,(e.clientX-r.left-8)/(r.width-16)))*dur};
+  const setSelection=(start,end)=>{
+    if(start===null||end===null){selection=null;ui();draw();return}
+    const a=Math.max(0,Math.min(start,end)),b=Math.min(curDur||audio.duration,Math.max(start,end));
+    selection=b-a>.12?{start:a,end:b}:null;ui();draw();
+  };
+  const seek=e=>{const time=pointerTime(e);if(time===null)return;audio.currentTime=time;el.time.textContent=clockT(cur());draw()};
+  el.wave.addEventListener("pointerdown",e=>{
+    if(mode!=="review"||open||recording)return;
+    dragStart=pointerTime(e);seeking=dragStart!==null;el.wave.setPointerCapture(e.pointerId);
+  });
+  el.wave.addEventListener("pointermove",e=>{if(seeking&&dragStart!==null)setSelection(dragStart,pointerTime(e))});
+  const endSelection=e=>{if(!seeking)return;const end=pointerTime(e);seeking=false;if(dragStart!==null&&end!==null&&Math.abs(end-dragStart)>.12){setSelection(dragStart,end);audio.currentTime=Math.min(dragStart,end)}else seek(e);dragStart=null};
+  ["pointerup","pointercancel"].forEach(ev=>el.wave.addEventListener(ev,endSelection));
+
+  function writeWav(buffer){
+    const channels=buffer.numberOfChannels,frames=buffer.length,dataSize=frames*channels*2,bytes=new ArrayBuffer(44+dataSize),view=new DataView(bytes);
+    const text=(offset,value)=>{for(let i=0;i<value.length;i++)view.setUint8(offset+i,value.charCodeAt(i))};
+    text(0,"RIFF");view.setUint32(4,36+dataSize,true);text(8,"WAVE");text(12,"fmt ");view.setUint32(16,16,true);view.setUint16(20,1,true);
+    view.setUint16(22,channels,true);view.setUint32(24,buffer.sampleRate,true);view.setUint32(28,buffer.sampleRate*channels*2,true);view.setUint16(32,channels*2,true);view.setUint16(34,16,true);text(36,"data");view.setUint32(40,dataSize,true);
+    const samples=Array.from({length:channels},(_,channel)=>buffer.getChannelData(channel));let offset=44;
+    for(let frame=0;frame<frames;frame++)for(let channel=0;channel<channels;channel++){const sample=Math.max(-1,Math.min(1,samples[channel][frame]));view.setInt16(offset,sample<0?sample*32768:sample*32767,true);offset+=2}
+    return new Blob([bytes],{type:"audio/wav"});
+  }
+  function remember(stack,file){
+    stack.push(file);
+    while(stack.length>2||stack.reduce((sum,item)=>sum+item.size,0)>240*1024*1024)stack.shift();
+  }
+  async function editAudio(kind,replacementBlob){
+    if(!selection||!opts.getAudio)return;
+    const originalBlob=opts.getAudio();
+    if(originalBlob.size>120*1024*1024)throw new Error("Audio edits are limited to 120 MB to protect this device’s memory.");
+    const AC=window.AudioContext||window.webkitAudioContext,context=new AC();
+    try{
+      const original=await context.decodeAudioData(await originalBlob.arrayBuffer()),rate=original.sampleRate;
+      const start=Math.floor(selection.start*rate),end=Math.min(original.length,Math.floor(selection.end*rate));
+      let replacement=null;
+      if(kind==="replace"){
+        replacement=await context.decodeAudioData(await replacementBlob.arrayBuffer());
+        if(replacement.sampleRate!==rate){
+          const Offline=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+          if(!Offline)throw new Error("This browser cannot resample replacement audio.");
+          const offline=new Offline(Math.min(original.numberOfChannels,2),Math.ceil(replacement.duration*rate),rate),source=offline.createBufferSource();
+          source.buffer=replacement;source.connect(offline.destination);source.start();replacement=await offline.startRendering();
+        }
+      }
+      const left=kind==="trim"?0:start,right=kind==="trim"?0:original.length-end,insertLength=kind==="trim"?end-start:kind==="replace"?replacement.length:0;
+      const frames=kind==="trim"?insertLength:left+insertLength+right;
+      if(!frames)throw new Error("This edit would leave no audio.");
+      const output=context.createBuffer(original.numberOfChannels,frames,rate);
+      for(let channel=0;channel<output.numberOfChannels;channel++){
+        const out=output.getChannelData(channel),source=original.getChannelData(channel);
+        if(kind==="trim")out.set(source.subarray(start,end));
+        else{
+          out.set(source.subarray(0,start),0);
+          if(kind==="replace"){const insert=replacement.getChannelData(Math.min(channel,replacement.numberOfChannels-1));out.set(insert.subarray(0,insertLength),start)}
+          if(right)out.set(source.subarray(end),start+insertLength);
+        }
+      }
+      const result=writeWav(output);remember(undoStack,originalBlob);redoStack=[];
+      opts.onAudio&&opts.onAudio(result);selection=null;showFile(result,true);ui();
+      opts.onMessage&&opts.onMessage(kind==="cut"?"Selection removed. Undo is available.":kind==="trim"?"Audio trimmed to the selection. Undo is available.":"Selection replaced. Undo is available.");
+    }finally{await context.close()}
+  }
+  async function runEdit(kind,file){
+    el.cut.disabled=el.trim.disabled=el.replace.disabled=el.undo.disabled=true;
+    try{await editAudio(kind,file)}catch(error){opts.onMessage&&opts.onMessage("Audio edit failed: "+error.message)}
+    finally{ui()}
+  }
+  el.cut.onclick=()=>runEdit("cut");
+  el.trim.onclick=()=>runEdit("trim");
+  el.replace.onchange=event=>{const file=event.target.files[0];if(file)runEdit("replace",file);event.target.value=""};
+  el.clear.onclick=()=>setSelection(null,null);
+  el.undo.onclick=()=>{
+    const previous=undoStack.pop();if(!previous)return;
+    remember(redoStack,opts.getAudio());opts.onAudio&&opts.onAudio(previous);selection=null;showFile(previous,true);ui();opts.onMessage&&opts.onMessage("Last audio edit undone.");
+  };
+  el.redoEdit.onclick=()=>{
+    const next=redoStack.pop();if(!next)return;
+    remember(undoStack,opts.getAudio());opts.onAudio&&opts.onAudio(next);selection=null;showFile(next,true);ui();opts.onMessage&&opts.onMessage("Audio edit redone.");
+  };
 
   async function peaksFromFile(f){
     if(f.size>60e6)return null;
@@ -217,8 +302,10 @@ function create(opts){
       for(let i=0;i<bins;i++){let m=0;const s=i*step,e=Math.min(d.length,s+step);for(let k=s;k<e;k++){const a=d[k]<0?-d[k]:d[k];if(a>m)m=a}out.push(m)}
       return{peaks:out,dur:buf.duration}}catch(e){return null}
   }
-  function showFile(f){
+  function showFile(f,keepHistory){
     if(recording)return;audio.pause();if(open&&!checking)closeMic();
+    if(!keepHistory){undoStack=[];redoStack=[]}
+    selection=null;
     mode="review";markers=[];peaks=null;curDur=0;const tok=++fileTok;el.time.textContent=clockT(0);el.total.textContent="";ui();draw();
     peaksFromFile(f).then(r=>{if(tok!==fileTok)return;if(r){peaks=r.peaks;curDur=r.dur;el.total.textContent="/ "+clockT(r.dur)}draw()});
   }

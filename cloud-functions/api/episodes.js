@@ -76,6 +76,30 @@ async function handle(context) {
       await store.setJSON(`reactions/c/${id}.json`, totals);
       return json({ ok: true, reactions: totals, selected: reaction });
     }
+    if (b.action === "list-comments") {
+      const id=String(b.id||"");
+      if(!ID_RE.test(id))return json({error:"Episode not found"},404);
+      const idx=await load(),episode=idx.episodes.find(item=>item.id===id);
+      if(!episode||episode.publishAt&&Date.parse(episode.publishAt)>Date.now())return json({error:"Episode not found"},404);
+      const {blobs}=await store.list({prefix:`comments/${id}/`,consistency:"strong"});
+      const comments=await Promise.all(blobs.map(item=>store.get(item.key,{type:"json",consistency:"strong"})));
+      return json({comments:comments.filter(Boolean).sort((a,b)=>Date.parse(a.createdAt)-Date.parse(b.createdAt)).slice(-100)});
+    }
+    if (b.action === "post-comment") {
+      const id=String(b.id||""),name=clip(b.name,40).trim(),text=clip(b.text,2000).trim(),visitor=String(b.visitor||"");
+      if(b.company)return json({error:"Couldn’t post comment."},400);
+      if(!ID_RE.test(id)||!/^[a-f0-9]{32}$/.test(visitor)||!name||!text)return json({error:"Add your name and a comment first."},400);
+      if(name.length>40||text.length>2000)return json({error:"Name or comment is too long."},400);
+      const idx=await load(),episode=idx.episodes.find(item=>item.id===id);
+      if(!episode||episode.publishAt&&Date.parse(episode.publishAt)>Date.now())return json({error:"Episode not found"},404);
+      const visitorHash=createHash("sha256").update("comment|"+visitor).digest("hex"),rateKey=`comment-rates/${visitorHash}.json`;
+      const previous=await store.get(rateKey,{type:"json",consistency:"strong"});
+      if(previous&&Date.now()-Date.parse(previous.createdAt)<30000)return json({error:"Please wait a moment before posting another comment."},429);
+      const comment={id:newId(),episodeId:id,name,text,createdAt:new Date().toISOString()};
+      await store.setJSON(`comments/${id}/${comment.id}.json`,comment);
+      await store.setJSON(rateKey,{createdAt:comment.createdAt});
+      return json({ok:true,comment});
+    }
   }
 
   if (!env.ADMIN_PASSWORD || !same(request.headers.get("x-admin-password"), env.ADMIN_PASSWORD)) {
@@ -367,6 +391,23 @@ async function handle(context) {
   }
 
   const idx = await load();
+
+  if(b.action==="list-recent-comments"){
+    const episodes=new Map(idx.episodes.filter(episode=>!episode.publishAt||Date.parse(episode.publishAt)<=Date.now()).map(episode=>[episode.id,episode.title]));
+    const {blobs}=await store.list({prefix:"comments/",consistency:"strong"});
+    const comments=(await Promise.all(blobs.map(item=>store.get(item.key,{type:"json",consistency:"strong"}))))
+      .filter(comment=>comment&&episodes.has(comment.episodeId))
+      .map(comment=>({...comment,episodeTitle:episodes.get(comment.episodeId)}))
+      .sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)).slice(0,100);
+    return json({comments});
+  }
+  if(b.action==="delete-comment"){
+    const id=String(b.id||""),commentId=String(b.commentId||"");
+    if(!ID_RE.test(id)||!/^[a-z0-9]{6,20}$/.test(commentId))return json({error:"Bad comment id"},400);
+    const key=`comments/${id}/${commentId}.json`,comment=await store.get(key,{type:"json",consistency:"strong"});
+    if(!comment)return json({error:"Comment not found"},404);
+    await store.delete(key);return json({ok:true});
+  }
 
   if (b.action === "save-transcript-words") {
     const id = String(b.id || ""), episode = idx.episodes.find(item => item.id === id);

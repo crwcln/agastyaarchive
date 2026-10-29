@@ -18,13 +18,19 @@ Transcribed words are highlighted and clickable during playback. New episodes ge
 
 ## Host area
 
-`/host/` is the host-only area. The footer "Host panel" link on the public site goes there, and it asks for `ADMIN_PASSWORD`. The default page is the **Dashboard** (`host/index.html`): episode counts, storage used, scheduled episodes (reschedule, publish now, delete) and every published episode with search and delete. **Record** (`host/record.html`) holds recording, file upload, transcription, chapters, AI description, scheduling and publishing. Shared login and the API helper live in `host/shell.js`; styles in `host/host.css`. Turn the whole area off with the `hostPanel` switch in `site-config.js`.
+`/host/` is the host-only area. The footer "Host panel" link on the public site goes there, and it asks for `ADMIN_PASSWORD`. **Dashboard**, **Record**, and **Ideas** share one animated, hash-routed workspace; direct links such as `/host/#record` open a specific tab. The Dashboard (`host/dashboard-view.html`) shows episode counts, storage used, scheduled episodes (reschedule, publish now, delete), and published episodes with search and delete. Analytics load separately so the dashboard appears sooner. Record (`host/record.html`) holds recording, file upload, transcription, chapters, AI description, scheduling, and publishing. Its waveform editor can select audio to cut, trim, or replace, with undo and redo. Shared login and the API helper live in `host/shell.js`; styles in `host/host.css`. Turn the whole area off with the `hostPanel` switch in `site-config.js`.
 
 The host dashboard also shows rolling 30-day listening estimates: play sessions, approximate unique listeners, top episodes, daily activity, and the busiest listening hour. Analytics are recorded only when playback starts; repeated starts for the same episode in the same browser and hour count once. A random browser ID is used to estimate repeat listeners; no IP address is collected. Hour-of-day data uses each listener's local clock and combines time zones, so treat it as a rough trend rather than a precise audience measurement.
+
+Listeners can post public comments on published episodes; comments appear immediately. Hosts can review recent comments in the Dashboard and delete them. The host workspace uses custom dialogs and toast notifications, while the public page includes a loading state and changelog.
 
 ### Ideas, drafts, read aloud and emoji
 
 - **Ideas** (`host/ideas.html`): a shared board for hosts and co-hosts, with an Idea generator tab that uses Gemini to suggest episode angles. Generate ideas by topic or AP World unit, add suggestions to the board, or open a suggestion directly in the Record page. Pitch an idea, change its status, comment, and click Start episode to open the Record page pre-filled. Each person picks a name and role (Host or Co-host) the first time they unlock the host area. Names are labels, not logins: everyone shares the same `ADMIN_PASSWORD`.
 - **Drafts**: Save draft on the Record page keeps the form, private script and notes, transcript, chapters and the audio (if any). Drafts live on the dashboard with Continue and Delete, and are never public. Continue restores saved audio so you can pick up where you left off. Publishing a draft removes it and keeps its audio.
 - **Read aloud** (`host/tts.js`): reads the private script, description or transcript with the browser's built-in voices. Browsers can't save that speech as an audio file, so it's for rehearsal and proofreading.
-- **Apple emoji** (`emoji.js`): swaps emoji for Apple-style images on every device, like MemberScript #77. Apple's emoji artwork is Apple's copyright; set `appleEmojis` to `false` to use each device's own emoji. Emoji inside dropdown menus and text boxes can't be swapped and stay native.    
+- **Apple emoji** (`emoji.js`): swaps emoji for Apple-style images on every device, like MemberScript #77. Apple's emoji artwork is Apple's copyright; set `appleEmojis` to `false` to use each device's own emoji. Emoji inside dropdown menus and text boxes can't be swapped and stay native.
+
+## Latest release
+
+Version 1.7.0 adds the one-page animated host workspace, waveform selection edits with replace/undo/redo, a refreshed archive logo, loading and toast notifications, public episode comments with a host inbox, and a visible changelog.

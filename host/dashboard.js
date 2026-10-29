@@ -5,7 +5,7 @@ const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(
 const mb=b=>(b||0)/1048576,size=b=>mb(b)>=1024?(mb(b)/1024).toFixed(2)+" GB":mb(b).toFixed(1)+" MB";
 const day=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
 const localDT=iso=>{const d=new Date(iso);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)};
-let pub=[],sch=[],drafts=[],q="",analytics=null,analyticsError="",backfilling=false;
+let pub=[],sch=[],drafts=[],comments=[],q="",analytics=null,analyticsError="",backfilling=false;
 const say=t=>$("dstatus").textContent=t;
 const hasTimedWords=e=>Array.isArray(e.transcriptWords)&&e.transcriptWords.some(word=>word&&String(word.word||"").trim()&&Number.isFinite(Number(word.start))&&Number.isFinite(Number(word.end))&&Number(word.start)>=0&&Number(word.end)>=Number(word.start));
 function count(el,to){const t0=performance.now(),step=t=>{const p=Math.min(1,(t-t0)/700);el.textContent=Math.round(to*p);if(p<1)requestAnimationFrame(step)};requestAnimationFrame(step)}
@@ -13,19 +13,22 @@ function count(el,to){const t0=performance.now(),step=t=>{const p=Math.min(1,(t-
 async function load(){
   say("Loading…");
   try{
-    const [a,b,c,dr]=await Promise.all([
+    const [a,b,dr]=await Promise.all([
       fetch("/api/episodes",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}),
       F.episodeScheduling===false?{episodes:[]}:api({action:"list-scheduled"}),
-      api({action:"analytics-summary"}).then(data=>({data})).catch(error=>({error})),
       F.episodeDrafts===false?[]:api({action:"list-drafts"}).then(d=>d.drafts||[]).catch(()=>[])]);
     pub=(a.episodes||[]).sort((x,y)=>y.num-x.num);sch=b.episodes||[];
-    drafts=dr;analytics=c.data||null;analyticsError=c.error?c.error.message:"";
+    drafts=dr;analytics=null;analyticsError="";
     say("");render();
+    api({action:"analytics-summary"}).then(data=>{analytics=data;analyticsError="";renderAnalytics()})
+      .catch(error=>{analytics=null;analyticsError=error.message;renderAnalytics()});
+    api({action:"list-recent-comments"}).then(data=>{comments=data.comments||[];renderComments()})
+      .catch(error=>{$("commentlist").replaceChildren(h("p",{class:"analytics-error"},"Comments unavailable: "+error.message))});
   }catch(e){say("Couldn’t load the dashboard: "+e.message)}
 }
 const act=(label,fn,ok,cls)=>{const b=h("button",{type:"button",class:cls||""},label);
-  b.onclick=async()=>{b.disabled=true;try{if(await fn()===false){b.disabled=false;return}say(ok);load()}catch(x){say("Failed: "+x.message);b.disabled=false}};return b};
-const remove=e=>act("Delete",async()=>{if(!confirm("Delete “"+e.title+"” and its audio for good?"))return false;await api({action:"delete",id:e.id})},"Episode deleted.","danger");
+  b.onclick=async()=>{b.disabled=true;try{if(await fn()===false){b.disabled=false;return}say(ok);HOST.notify(ok);load()}catch(x){say("Failed: "+x.message);HOST.notify("Failed: "+x.message,"error");b.disabled=false}};return b};
+const remove=e=>act("Delete",async()=>{if(!await HOST.confirm("Delete “"+e.title+"” and its audio for good?","Delete episode"))return false;await api({action:"delete",id:e.id})},"Episode deleted.","danger");
 
 function stats(){
   const total=[...pub,...sch].reduce((s,e)=>s+(e.size||0),0),pct=Math.min(100,mb(total)/1024*100),last=pub[0];
@@ -93,7 +96,7 @@ function draftList(){
     h("div",null,h("h3",null,d.title||"Untitled draft"),h("div",{class:"sub"},"Updated "+when(d.updatedAt)+" by "+(d.updatedBy?d.updatedBy.name:"someone")+(d.unit?" · "+d.unit:"")),
       h("div",{class:"tags"},d.audio&&h("span",null,"audio · "+size(d.audio.size)),d.hasNotes&&h("span",null,"script"),d.ideaId&&h("span",null,"from an idea"))),
     h("div",{class:"acts2"},h("a",{class:"btn go",href:"/host/record.html?draft="+encodeURIComponent(d.id)},"Continue"),
-      act("Delete",async()=>{if(!confirm("Delete the draft “"+(d.title||"Untitled draft")+"”? Its saved audio goes too."))return false;await api({action:"delete-draft",id:d.id})},"Draft deleted.","danger")))));
+      act("Delete",async()=>{if(!await HOST.confirm("Delete the draft “"+(d.title||"Untitled draft")+"”? Its saved audio goes too.","Delete draft"))return false;await api({action:"delete-draft",id:d.id})},"Draft deleted.","danger")))));
 }
 function scheduled(){
   $("schedsec").hidden=F.episodeScheduling===false;const box=$("sched");box.replaceChildren();
@@ -104,7 +107,7 @@ function scheduled(){
       h("div",{class:"srow"},h("span",{class:"n"},"EP "+e.num),h("div",null,h("h3",null,e.title),h("div",{class:"sub"},"Goes live "+new Date(e.publishAt).toLocaleString()))),
       h("div",{class:"srow"},input,
         act("Save time",async()=>{if(!input.value){say("Choose a schedule time.");return false}await api({action:"set-schedule",id:e.id,publishAt:new Date(input.value).toISOString()})},"Schedule updated."),
-        act("Publish now",async()=>{if(!confirm("Publish “"+e.title+"” now?"))return false;await api({action:"publish-now",id:e.id})},"Episode published."),
+        act("Publish now",async()=>{if(!await HOST.confirm("Publish “"+e.title+"” now?","Publish episode"))return false;await api({action:"publish-now",id:e.id})},"Episode published."),
         F.episodeDeletion!==false&&remove(e))));
   });
 }
@@ -122,12 +125,25 @@ function published(){
       h("div",{class:"tags"},e.transcript&&h("span",null,"transcript"),e.chapters&&e.chapters.length>0&&h("span",null,e.chapters.length+" chapters"),e.rant&&h("span",null,"\u{1F525}".repeat(Math.min(5,e.rant))))),
     F.episodeDeletion!==false?remove(e):h("span"))));
 }
+function renderComments(){
+  const box=$("commentlist");box.replaceChildren();
+  if(!comments.length){box.append(h("div",{class:"empty"},"No public comments yet."));return}
+  comments.forEach(comment=>box.append(h("article",{class:"comment-inbox"},
+    h("div",{class:"comment-inbox-head"},h("b",null,comment.name),h("span",null,"EP: "+comment.episodeTitle+" · "+new Date(comment.createdAt).toLocaleString())),
+    h("p",null,comment.text),
+    h("button",{type:"button",class:"danger",onclick:async event=>{
+      if(!await HOST.confirm("Delete this public comment?","Delete comment"))return;
+      event.currentTarget.disabled=true;
+      try{await api({action:"delete-comment",id:comment.episodeId,commentId:comment.id});comments=comments.filter(item=>item.id!==comment.id);renderComments();HOST.notify("Comment deleted.")}
+      catch(error){event.currentTarget.disabled=false;HOST.notify("Couldn’t delete comment: "+error.message,"error")}
+    }},"Delete"))));
+}
 function render(){stats();renderAnalytics();scheduled();draftList();published()}
 $("dsearch").addEventListener("input",e=>{q=e.target.value.trim().toLowerCase();published()});
 $("dbackfill").addEventListener("click",async()=>{
   const targets=pub.filter(e=>!hasTimedWords(e));
   if(!targets.length||backfilling)return;
-  if(!confirm("Generate accurate word timestamps for "+targets.length+" episode"+(targets.length===1?"":"s")+" using Gemini? This retranscribes each episode and may incur API usage."))return;
+  if(!await HOST.confirm("Generate accurate word timestamps for "+targets.length+" episode"+(targets.length===1?"":"s")+" using Gemini? This retranscribes each episode and may incur API usage.","Generate word highlights"))return;
   backfilling=true;published();
   let completed=0;const failures=[];
   for(const [index,episode] of targets.entries()){

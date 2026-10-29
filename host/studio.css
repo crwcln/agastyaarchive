@@ -27,6 +27,14 @@
 .clip.on{background:#ff3b30;border-color:#ff3b30;color:#fff;box-shadow:0 0 12px #ff3b30}
 .st-wave{position:relative;height:180px;border-radius:12px;background:linear-gradient(#0d0907,#15110d);border:1px solid #2c231b;box-shadow:inset 0 2px 14px rgba(0,0,0,.6);overflow:hidden}
 .st-wave canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.st-editor{display:grid;gap:12px;margin-top:12px;padding:13px;border:1px solid #2c231b;border-radius:8px;background:var(--surface);animation:rise .25s both}
+.st-editor[hidden]{display:none}
+.st-selection{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;color:var(--mute);font-size:13px}
+.st-selection b{color:var(--ink)}
+.st-edit-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.st-edit-file{display:inline-block;padding:9px 16px;border:1px solid var(--line);border-radius:4px;color:var(--ink);font:700 14px 'Space Grotesk',sans-serif;cursor:pointer;transition:transform .15s,border-color .2s}
+.st-edit-file:hover{transform:translateY(-1px);border-color:var(--gold)}
+.st-edit-file.disabled{opacity:.4;cursor:default}
 [data-mode="review"] .st-wave canvas{cursor:ew-resize}
 .st-empty{position:absolute;inset:0;display:grid;place-items:center;padding:0 24px;text-align:center;color:var(--mute);font-size:14px;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 11px,rgba(241,231,211,.04) 11px 12px)}
 .st-empty[hidden]{display:none}

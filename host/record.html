@@ -12,7 +12,7 @@
 <body data-page="record">
 <div id="hdr"></div><div id="gate"></div>
 <main class="hmain wide" id="app" hidden>
-  <div class="ptitle"><div><h1>Record</h1><p>Record in the studio or import a file, polish the details, and publish.</p></div><a class="btn" href="/host/">← Dashboard</a></div>
+  <div class="ptitle"><div><h1>Record</h1><p>Record in the studio or import a file, polish the details, and publish.</p></div><a class="btn" href="/host/#dashboard">← Dashboard</a></div>
 
   <section class="studio" id="studio" data-state="idle" data-mode="idle" aria-label="Recording studio">
     <div class="st-top">
@@ -30,8 +30,20 @@
     </div>
     <div class="st-review" id="streview" hidden>
       <button type="button" class="playbtn" id="stplay" aria-label="Play or pause"><svg class="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><svg class="ic-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg></button>
-      <span>Click or drag the waveform to scrub. Press <b>M</b> to drop a chapter marker at the playhead.</span>
+      <span>Drag across the waveform to select audio, or click to seek. Press <b>M</b> to drop a chapter marker at the playhead.</span>
       <button type="button" id="stredo">Re-record</button>
+    </div>
+    <div class="st-editor" id="steditor" hidden>
+      <div class="st-selection"><b>Selection</b><span id="stselection">None</span></div>
+      <div class="st-edit-actions">
+        <button type="button" id="stcut" disabled>Cut selection</button>
+        <button type="button" id="sttrim" disabled>Keep selection</button>
+        <label class="st-edit-file" id="streplaceLabel" title="Replace the selected audio with another audio file">Replace with audio file<input type="file" id="streplacefile" accept="audio/*" hidden disabled></label>
+        <button type="button" id="stundo" disabled>Undo edit</button>
+        <button type="button" id="stredoedit" disabled>Redo edit</button>
+        <button type="button" id="stclear" disabled>Clear selection</button>
+      </div>
+      <p class="fine">Edits are applied to a working copy. Undo is available until you leave this recording.</p>
     </div>
     <audio id="hpprev" preload="metadata" hidden></audio>
   </section>

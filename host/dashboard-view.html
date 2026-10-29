@@ -1,0 +1,19 @@
+<div class="ptitle"><div><h1>Dashboard</h1><p>The whole show at a glance.</p></div>
+  <div class="acts2"><a class="btn go" href="/host/#record">● New recording</a><button id="drefresh" type="button">Refresh</button></div></div>
+<div id="dstatus" class="status" role="status" aria-live="polite"></div>
+<section class="stats" id="stats"></section>
+<section id="analytics">
+  <div class="sech"><h2>Listening · last 30 days</h2><span id="analytics-range">Loading listening data…</span></div>
+  <p class="analytics-note">Estimated listeners use a random ID stored in each browser. Repeat starts for one episode in the same hour count once. Listening times use listeners’ local clock hours.</p>
+  <div class="analytics-stats" id="analytics-stats"></div>
+  <div class="analytics-panels">
+    <article class="analytics-panel"><h3>Most active listening hours</h3><div id="hour-chart" class="hour-chart"></div></article>
+    <article class="analytics-panel"><h3>Most-started episodes</h3><div id="top-episodes"></div></article>
+    <article class="analytics-panel daily-panel"><h3>Listening activity</h3><div id="daily-chart" class="daily-chart"></div><div id="daily-range" class="daily-range"></div></article>
+  </div>
+  <p id="analytics-error" class="analytics-error" role="status" hidden></p>
+</section>
+<section id="draftsec"><div class="sech"><h2>Drafts</h2><span class="mute">Episodes in progress, only visible here</span></div><div id="drafts"></div></section>
+<section id="schedsec"><div class="sech"><h2>Up next</h2></div><div id="sched"></div></section>
+<section><div class="sech"><h2>Published episodes</h2><div class="acts2"><button id="dbackfill" type="button" hidden>Generate missing word highlights</button><input id="dsearch" class="search" type="search" placeholder="Search episodes"></div></div><div id="plist"></div></section>
+<section id="commentsec"><div class="sech"><h2>Public comments</h2><span class="mute">Recent discussion on published episodes</span></div><div id="commentlist"></div></section>
