@@ -5,8 +5,9 @@ const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(
 const mb=b=>(b||0)/1048576,size=b=>mb(b)>=1024?(mb(b)/1024).toFixed(2)+" GB":mb(b).toFixed(1)+" MB";
 const day=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}catch(e){return d||""}};
 const localDT=iso=>{const d=new Date(iso);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)};
-let pub=[],sch=[],drafts=[],q="",analytics=null,analyticsError="";
+let pub=[],sch=[],drafts=[],q="",analytics=null,analyticsError="",backfilling=false;
 const say=t=>$("dstatus").textContent=t;
+const hasTimedWords=e=>Array.isArray(e.transcriptWords)&&e.transcriptWords.some(word=>word&&String(word.word||"").trim()&&Number.isFinite(Number(word.start))&&Number.isFinite(Number(word.end))&&Number(word.start)>=0&&Number(word.end)>=Number(word.start));
 function count(el,to){const t0=performance.now(),step=t=>{const p=Math.min(1,(t-t0)/700);el.textContent=Math.round(to*p);if(p<1)requestAnimationFrame(step)};requestAnimationFrame(step)}
 
 async function load(){
@@ -109,6 +110,10 @@ function scheduled(){
 }
 function published(){
   const box=$("plist");box.replaceChildren();
+  const backfill=$("dbackfill"),missing=pub.filter(e=>!hasTimedWords(e));
+  backfill.hidden=F.transcript===false||!missing.length;
+  backfill.disabled=backfilling;
+  backfill.textContent=backfilling?"Generating word highlights…":"Generate missing word highlights ("+missing.length+")";
   const list=pub.filter(e=>!q||(e.title+" "+(e.unit||"")).toLowerCase().includes(q));
   if(!list.length){box.append(h("div",{class:"empty"},pub.length?"No episodes match that search.":h("span",null,"No episodes yet. ",h("a",{href:"/host/record.html"},"Record the first one →"))));return}
   list.forEach((e,i)=>box.append(h("article",{class:"item",style:"animation-delay:"+Math.min(i,8)*45+"ms"},
@@ -119,6 +124,26 @@ function published(){
 }
 function render(){stats();renderAnalytics();scheduled();draftList();published()}
 $("dsearch").addEventListener("input",e=>{q=e.target.value.trim().toLowerCase();published()});
+$("dbackfill").addEventListener("click",async()=>{
+  const targets=pub.filter(e=>!hasTimedWords(e));
+  if(!targets.length||backfilling)return;
+  if(!confirm("Generate accurate word timestamps for "+targets.length+" episode"+(targets.length===1?"":"s")+" using Gemini? This retranscribes each episode and may incur API usage."))return;
+  backfilling=true;published();
+  let completed=0;const failures=[];
+  for(const [index,episode] of targets.entries()){
+    say("Generating word highlights for EP "+episode.num+" ("+(index+1)+" of "+targets.length+")…");
+    try{
+      const result=await api({action:"transcribe",id:episode.id,parts:episode.chunks,size:episode.size,type:episode.type});
+      if(!Array.isArray(result.words)||!result.words.length)throw new Error("No timed words were returned.");
+      const saved=await api({action:"save-transcript-words",id:episode.id,words:result.words,transcript:result.transcript});
+      episode.transcriptWords=saved.transcriptWords;
+      if(!episode.transcript&&saved.transcript)episode.transcript=saved.transcript;
+      completed++;
+    }catch(error){failures.push("EP "+episode.num+": "+error.message)}
+  }
+  backfilling=false;published();
+  say("Generated word highlights for "+completed+" of "+targets.length+" episodes."+(failures.length?" Failed: "+failures.join(" | "):""));
+});
 $("drefresh").addEventListener("click",load);
 load();
 });

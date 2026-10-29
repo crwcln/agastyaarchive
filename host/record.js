@@ -11,10 +11,11 @@ if(FEATURES.transcript===false)$("transcriptField").hidden=true;
 if(FEATURES.autoChapters!==true)$("chapterEditor").hidden=true;
 if(FEATURES.episodeScheduling===false)$("publishScheduleField").hidden=true;
 if(FEATURES.transcript===false&&FEATURES.autoChapters!==true)$("trCard").hidden=true;
+if(FEATURES.episodeDrafts===false)$("hpsavedraft").hidden=true;
 UNITS.forEach(u=>$("hpunit").append(new Option(u,u)));
 [1,2,3,4,5].forEach(n=>$("hprant").append(new Option("\u{1F525}".repeat(n),n,false,n===4)));
 $("hpdate").value=new Date().toISOString().slice(0,10);
-let pw=HOST.pw(),stream,rec,chunks=[],blob=null,transcriptWords=[],uploadId=null,uploadedBlob=null,uploadedParts=0,t0=0,acc=0,tick=null;
+let pw=HOST.pw(),stream,rec,chunks=[],blob=null,transcriptWords=[],uploadId=null,uploadedBlob=null,uploadedParts=0,savedAudioId=null,draftId=null,t0=0,acc=0,tick=null;
 const msg=t=>$("hpmsg").textContent=t;
 const fmtT=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 const elapsed=()=>acc+(rec&&rec.state==="recording"?(Date.now()-t0)/1000:0);
@@ -72,9 +73,10 @@ async function ensureUploaded(){
   uploadId=started.id;uploadedBlob=blob;uploadedParts=parts;
   return {id:uploadId,parts:uploadedParts};
 }
-function setAudio(b){transcriptWords=[];$("hpchapters").value="";$("hpchapterStatus").textContent="";if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);msg((b.size<1048576?Math.max(1,Math.round(b.size/1024))+" KB":(b.size/1048576).toFixed(1)+" MB")+" ready.")}
+function discardTemporaryUpload(){if(uploadId&&uploadId!==savedAudioId)api({action:"discard-upload",id:uploadId}).catch(()=>{})}
+function setAudio(b){transcriptWords=[];$("hpchapters").value="";$("hpchapterStatus").textContent="";discardTemporaryUpload();uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);msg((b.size<1048576?Math.max(1,Math.round(b.size/1024))+" KB":(b.size/1048576).toFixed(1)+" MB")+" ready.")}
 function clearAudio(){
-  if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});
+  discardTemporaryUpload();
   uploadId=null;uploadedBlob=null;uploadedParts=0;blob=null;transcriptWords=[];
   $("hptr").value="";$("hpchapters").value="";$("hpchapterStatus").textContent="";$("hpprev").removeAttribute("src");msg("");
 }
@@ -93,6 +95,59 @@ const studio=Studio.create({
 });
 $("hpfile").onchange=e=>{const f=e.target.files[0];if(f){setAudio(f);studio.showFile(f)}};
 $("hptr").oninput=()=>{transcriptWords=[]};
+$("hpsavedraft").onclick=async()=>{
+  const btn=$("hpsavedraft"),prog=$("hpprog");
+  if(["rec","paused"].includes($("studio").dataset.state)){msg("Stop recording before saving the draft.");return}
+  btn.disabled=true;prog.hidden=false;prog.value=0;
+  try{
+    let audio=null;
+    if(blob){
+      msg("Preparing audio for your draft…");
+      const upload=await ensureUploaded();
+      audio=upload.id===savedAudioId?{keep:true}:{id:upload.id,chunks:upload.parts,size:blob.size,type:(blob.type||"audio/webm").split(";")[0]};
+    }
+    const saved=await api({action:"save-draft",by:HOST.who(),draft:{
+      id:draftId||undefined,title:$("hptitle").value,unit:$("hpunit").value,date:$("hpdate").value,rant:+$("hprant").value,
+      desc:$("hpdesc").value,script:$("hpscript").value,transcript:$("hptr").value,transcriptWords,
+      chapters:$("hpchapters").value,whenLocal:$("hpwhen").value,ideaId:new URLSearchParams(location.search).get("idea"),audio
+    }});
+    draftId=saved.draft.id;savedAudioId=saved.draft.audio&&saved.draft.audio.id||null;
+    if(blob&&uploadId===savedAudioId)uploadedBlob=blob;
+    $("hpsavedraft").textContent="Update draft";msg("Draft saved. Find it on the dashboard whenever you’re ready to continue.");
+  }catch(e){msg("Couldn’t save draft: "+e.message)}
+  finally{btn.disabled=false;prog.hidden=true}
+};
+async function loadDraft(){
+  const params=new URLSearchParams(location.search),id=params.get("draft");
+  if(!id||FEATURES.episodeDrafts===false)return;
+  const btn=$("hpsavedraft");let loaded=false;btn.disabled=true;msg("Loading draft…");
+  try{
+    const result=await api({action:"get-draft",id}),d=result.draft;
+    draftId=d.id;savedAudioId=d.audio&&d.audio.id||null;
+    $("hptitle").value=d.title||"";$("hpunit").value=d.unit||UNITS[0];
+    $("hpdate").value=d.date||new Date().toISOString().slice(0,10);$("hprant").value=String(d.rant||4);
+    $("hpdesc").value=d.desc||"";$("hpscript").value=d.script||"";$("hptr").value=d.transcript||"";
+    $("hpchapters").value=d.chapters||"";$("hpwhen").value=d.whenLocal||"";
+    transcriptWords=Array.isArray(d.transcriptWords)?d.transcriptWords:[];
+    if(d.audio){
+      const parts=[];
+      for(let i=0;i<d.audio.chunks;i++){
+        const start=i*CHUNK,end=Math.min(d.audio.size-1,start+CHUNK-1);
+        const response=await fetch("/api/audio?draft="+encodeURIComponent(d.id),{headers:{"x-admin-password":pw,"Range":"bytes="+start+"-"+end}});
+        if(!response.ok)throw new Error("Couldn’t load saved audio (HTTP "+response.status+").");
+        const part=await response.arrayBuffer();
+        if(part.byteLength!==end-start+1)throw new Error("A saved audio part was incomplete.");
+        parts.push(part);
+      }
+      blob=new Blob(parts,{type:d.audio.type||"audio/webm"});uploadId=d.audio.id;uploadedBlob=blob;uploadedParts=d.audio.chunks;
+      $("hpprev").src=URL.createObjectURL(blob);studio.showFile(blob);
+    }
+    $("hpsavedraft").textContent="Update draft";msg("Draft loaded. Continue editing, then save or publish when ready.");loaded=true;
+  }catch(e){msg("Couldn’t load draft: "+e.message)}
+  finally{btn.disabled=!loaded}
+}
+$("hpsavedraft").hidden=FEATURES.episodeDrafts===false;
+loadDraft();
 $("hptranscribe").onclick=async()=>{
   const btn=$("hptranscribe"),prog=$("hpprog"),status=$("hptranscribeStatus");
   if(!blob){status.textContent="Choose or record an audio file first.";status.dataset.error="true";msg(status.textContent);return}
@@ -164,13 +219,14 @@ $("hppub").onclick=async()=>{
   try{
 msg("Preparing upload…");
     const {id,parts}=await ensureUploaded();
+    if(!transcriptWords.length){
+      msg("Generating word timings for transcript highlighting…");
+      const transcriptResult=await api({action:"transcribe",id,parts,size:blob.size,type:blob.type});
+      transcriptWords=Array.isArray(transcriptResult.words)?transcriptResult.words:[];
+      if(!$("hptr").value.trim())$("hptr").value=transcriptResult.transcript||"";
+      if(!transcriptWords.length)throw new Error("No word timings were returned. Try transcribing the audio again before publishing.");
+    }
     if(FEATURES.autoChapters===true&&$("hpautoChapters").checked&&!parseChapterLines().length){
-      if(!transcriptWords.length){
-        msg("Transcribing audio to prepare episode chapters...");
-        const transcriptResult=await api({action:"transcribe",id,parts,size:blob.size,type:blob.type});
-        $("hptr").value=transcriptResult.transcript||"";
-        transcriptWords=Array.isArray(transcriptResult.words)?transcriptResult.words:[];
-      }
       await maybeGenerateChapters();
       if(!parseChapterLines().length)throw new Error("Automatic chapter generation failed. Uncheck the chapter option or add chapters manually, then publish again.");
     }
@@ -178,7 +234,12 @@ msg("Preparing upload…");
     const publishAt=$("hpwhen").value?new Date($("hpwhen").value).toISOString():null;
     const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,publishAt,rant:+$("hprant").value,desc:$("hpdesc").value,transcript:$("hptr").value,transcriptWords,chapters:parseChapterLines(),size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
     if(res.episode.publishAt)msg("Episode "+res.episode.num+" scheduled for "+new Date(res.episode.publishAt).toLocaleString());else msg("Live! Episode "+res.episode.num+" is published.");
+    if(draftId){
+      try{await api({action:"delete-draft",id:draftId,keepAudio:savedAudioId===res.episode.id})}
+      catch(e){msg("Episode published, but the draft could not be removed: "+e.message)}
+    }
     blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").removeAttribute("src");studio.reset();["hptitle","hpdesc","hptr","hpscript","hpchapters","hpfile","hpwhen"].forEach(k=>$(k).value="");transcriptWords=[];$("hpscriptStatus").textContent="";
+    draftId=null;savedAudioId=null;$("hpsavedraft").textContent="Save draft";
     $("hpdone").hidden=false;
   }catch(e){msg("Failed: "+e.message)}
   btn.disabled=false;prog.hidden=true;

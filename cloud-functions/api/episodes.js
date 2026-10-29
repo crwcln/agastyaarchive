@@ -158,7 +158,7 @@ async function handle(context) {
     if (old && old.audio && (!audio || audio.id !== old.audio.id)) await dropAudio(store, old.audio.id); // replaced or removed
     const now = new Date().toISOString();
     const draft = { id, title: clip(e.title, 200).trim(), unit: clip(e.unit, 80), date: /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : "",
-      rant: Math.min(5, Math.max(1, +e.rant || 3)), desc: clip(e.desc, 5000), notes: clip(e.notes, 20000), transcript: clip(e.transcript, 200000),
+      rant: Math.min(5, Math.max(1, +e.rant || 3)), desc: clip(e.desc, 5000), script: clip(e.script, 200000), notes: clip(e.notes, 20000), transcript: clip(e.transcript, 200000),
       transcriptWords: cleanWords(e.transcriptWords), chapters: clip(e.chapters, 5000), whenLocal: clip(e.whenLocal, 20),
       ideaId: ID_RE.test(String(e.ideaId || "")) ? String(e.ideaId) : (old && old.ideaId) || null, audio,
       author: old ? old.author : by, createdAt: old ? old.createdAt : now, updatedAt: now, updatedBy: by };
@@ -330,6 +330,20 @@ async function handle(context) {
   }
 
   const idx = await load();
+
+  if (b.action === "save-transcript-words") {
+    const id = String(b.id || ""), episode = idx.episodes.find(item => item.id === id);
+    if (!ID_RE.test(id) || !episode) return json({ error: "Episode not found" }, 404);
+    if (Array.isArray(episode.transcriptWords) && cleanWords(episode.transcriptWords).length) {
+      return json({ ok: true, unchanged: true, transcriptWords: episode.transcriptWords, transcript: episode.transcript || "" });
+    }
+    const transcriptWords = cleanWords(b.words);
+    if (!transcriptWords.length) return json({ error: "No usable timed words were provided." }, 400);
+    episode.transcriptWords = transcriptWords;
+    if (!episode.transcript && b.transcript) episode.transcript = clip(b.transcript, 200000);
+    await store.setJSON("episodes.json", idx);
+    return json({ ok: true, transcriptWords, transcript: episode.transcript || "" });
+  }
 
   if (b.action === "analytics-summary") {
     const published = new Map(idx.episodes
