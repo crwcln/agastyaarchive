@@ -6,6 +6,13 @@ const STATUS=[["new","New"],["discussing","Discussing"],["planned","Planned"],["
 let ideas=[],filter="all",q="",sig="",baseline="";
 try{baseline=localStorage.getItem("aa_ideas_seen")||""}catch(e){}
 const say=t=>$("itStatus").textContent=t;
+let generation=0;
+function selectTab(name){
+  const board=name==="board";
+  $("itBoard").hidden=!board;$("itGenerator").hidden=board;
+  $("itBoardTab").classList.toggle("on",board);$("itGeneratorTab").classList.toggle("on",!board);
+  $("itBoardTab").setAttribute("aria-selected",String(board));$("itGeneratorTab").setAttribute("aria-selected",String(!board));
+}
 const ago=iso=>{const s=Math.max(0,(Date.now()-Date.parse(iso))/1000);if(s<60)return"just now";if(s<3600)return Math.floor(s/60)+" min ago";if(s<86400)return Math.floor(s/3600)+" h ago";if(s<604800)return Math.floor(s/86400)+" d ago";return new Date(iso).toLocaleDateString()};
 const byline=p=>p.name+" · "+p.role;
 const fresh=i=>!!baseline&&Date.parse(i.updatedAt)>Date.parse(baseline)&&i.updatedBy&&i.updatedBy.name!==me.name;
@@ -57,6 +64,43 @@ $("itShare").addEventListener("click",async()=>{
   $("itShare").disabled=false;
 });
 $("itSearch").addEventListener("input",e=>{q=e.target.value.trim().toLowerCase();render()});
+$("itBoardTab").addEventListener("click",()=>selectTab("board"));
+$("itGeneratorTab").addEventListener("click",()=>selectTab("generator"));
+$("itGenerate").addEventListener("click",async()=>{
+  const button=$("itGenerate"),status=$("itGenStatus"),results=$("itGenResults"),topic=$("itGenTopic").value.trim(),unit=$("itGenUnit").value;
+  button.disabled=true;results.replaceChildren();status.textContent="Starting the idea generator…";
+  try{
+    const started=await api({action:"generate-ideas",topic,unit});
+    if(!started.interactionId)throw new Error("The idea generator did not start.");
+    const token=++generation,deadline=Date.now()+5*60*1000;let result;
+    while(Date.now()<deadline){
+      await new Promise(resolve=>setTimeout(resolve,2000));
+      if(token!==generation)return;
+      status.textContent="Finding fresh episode angles…";
+      try{result=await api({action:"ideas-status",id:started.interactionId})}
+      catch(error){if(/HTTP 50[234]/.test(error.message))continue;throw error}
+      if(result.status==="completed")break;
+      if(result.error)throw new Error(result.error);
+    }
+    if(!result||result.status!=="completed")throw new Error("Idea generation is taking too long. Please try again.");
+    if(!Array.isArray(result.ideas)||!result.ideas.length)throw new Error("The generator returned no usable ideas.");
+    result.ideas.forEach(idea=>{
+      const title=String(idea.title||"").trim(),notes=String(idea.notes||"").trim();
+      if(!title)return;
+      const card=h("article",{class:"idea-result"},h("h3",null,title),notes?h("p",null,notes):null,
+        h("div",{class:"idea-acts"},
+          h("button",{type:"button",class:"go",onclick:async event=>{
+            const add=event.currentTarget;add.disabled=true;
+            try{await api({action:"save-idea",title,notes});add.textContent="Added to idea board";$("itMsg").textContent="Generated idea added to the shared board.";load()}
+            catch(error){add.disabled=false;status.textContent="Couldn’t add idea: "+error.message}
+          }},"Add to idea board"),
+          h("a",{class:"btn",href:"/host/record.html?title="+encodeURIComponent(title)+"&unit="+encodeURIComponent(unit)},"Start episode")));
+      results.append(card);
+    });
+    status.textContent=results.childElementCount?"Here are some starting points. Refine them or add one to the shared board.":"The generator returned no usable ideas.";
+  }catch(error){status.textContent="Idea generation failed: "+error.message}
+  finally{button.disabled=false}
+});
 const markSeen=()=>{try{localStorage.setItem("aa_ideas_seen",new Date().toISOString())}catch(e){}};
 addEventListener("pagehide",markSeen);document.addEventListener("visibilitychange",()=>{if(document.hidden)markSeen()});
 setInterval(()=>{if(!document.hidden)load()},15000);

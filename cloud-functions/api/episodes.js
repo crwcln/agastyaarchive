@@ -271,6 +271,43 @@ async function handle(context) {
     return json({ status, ...(status === "completed" ? { script: script.slice(0, 50000) } : {}) });
   }
 
+  if (b.action === "generate-ideas") {
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const topic = String(b.topic || "").trim().slice(0, 300), unit = String(b.unit || "").trim().slice(0, 100);
+    const input = "Generate 5 distinct, compelling episode ideas for The Agastya Archive, an AP World History podcast hosted by a student. " +
+      "Use sharp, curious, classroom-appropriate angles that are historically grounded and suitable for an engaging conversation. " +
+      "Avoid repeating the same idea. " + (topic ? "Focus on or connect to this topic: " + topic + ". " : "Explore a varied mix of AP World History themes. ") +
+      (unit ? "Prioritize this course unit: " + unit + ". " : "Ideas may span any AP World unit. ") +
+      "Return only valid JSON with this shape: " + JSON.stringify({ ideas: [{ title: "Short episode title", notes: "A concise angle and why it could make a good episode." }] });
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: true, generation_config: { thinking_level: "low", max_output_tokens: 3000 } }) });
+    let result = {}; try { result = await response.json(); } catch {}
+    if (!response.ok) return json({ error: result.error?.message || "Gemini idea generation failed (HTTP " + response.status + ")." }, 502);
+    const interactionId = result.id || result.interaction?.id;
+    if (!interactionId) return json({ error: "Gemini did not return an idea-generation ID." }, 502);
+    return json({ interactionId, status: result.status || "in_progress" });
+  }
+
+  if (b.action === "ideas-status") {
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const id = String(b.id || "");
+    if (!/^[A-Za-z0-9_-]{10,200}$/.test(id)) return json({ error: "Bad idea-generation ID." }, 400);
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions/" + encodeURIComponent(id), { headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Api-Revision": "2026-05-20" } });
+    let result = {}; try { result = await response.json(); } catch {}
+    if (!response.ok) return json({ error: result.error?.message || "Gemini idea status failed (HTTP " + response.status + ")." }, 502);
+    const status = String(result.status || "in_progress");
+    if (status !== "completed") {
+      if (["failed", "cancelled", "incomplete"].includes(status)) return json({ error: "Gemini idea generation ended with status: " + status + ". " + interactionFailure(result) + " (Interaction " + id + ")", status });
+      return json({ status });
+    }
+    const output = (result.steps || []).filter(step => step.type === "model_output").flatMap(step => step.content || []).filter(item => item.type === "text").map(item => item.text || "").join("\n").trim();
+    const cleaned = output.replace(/^\x60{3}(?:json)?\s*/i, "").replace(/\s*\x60{3}\s*$/, "");
+    let parsed;
+    try { parsed = JSON.parse(cleaned); } catch { return json({ error: "Gemini returned idea data that was not valid JSON." }, 502); }
+    const ideas = (Array.isArray(parsed.ideas) ? parsed.ideas : []).map(idea => ({ title: String(idea.title || "").trim().slice(0, 200), notes: String(idea.notes || "").trim().slice(0, 2000) })).filter(idea => idea.title).slice(0, 8);
+    if (!ideas.length) return json({ error: "Gemini returned no usable ideas." }, 502);
+    return json({ status, ideas });
+  }
+
   if (b.action === "generate-chapters") {
     if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
     const title = String(b.title || "").trim().slice(0, 200), unit = String(b.unit || "").trim().slice(0, 100);

@@ -12,16 +12,32 @@
 <body data-page="ideas">
 <div id="hdr"></div><div id="gate"></div>
 <main class="hmain" id="app" hidden>
-  <div class="ptitle"><div><h1>Ideas</h1><p>A shared board for hosts and co-hosts. Pitch episodes, riff on each other’s ideas, then turn the best ones into drafts.</p></div></div>
-  <section class="card hf composer">
-    <h2>Pitch an idea</h2>
-    <label for="itTitle">Idea</label><input id="itTitle" maxlength="200" placeholder="e.g. Why the Silk Road was really about paper">
-    <label for="itNotes">Notes (optional)</label><textarea id="itNotes" maxlength="8000" placeholder="Angle, sources, rant potential…"></textarea>
-    <div class="acts"><button class="go" id="itShare" type="button">Share idea</button><span id="itMsg" class="mute"></span></div>
+  <div class="ptitle"><div><h1>Ideas</h1><p>Pitch episodes, riff on each other’s ideas, or generate a few fresh angles to get started.</p></div></div>
+  <div class="idea-tabs" role="tablist" aria-label="Ideas tools">
+    <button type="button" class="idea-tab on" id="itBoardTab" role="tab" aria-selected="true" aria-controls="itBoard">Idea board</button>
+    <button type="button" class="idea-tab" id="itGeneratorTab" role="tab" aria-selected="false" aria-controls="itGenerator">Idea generator</button>
+  </div>
+  <section id="itBoard" role="tabpanel" aria-labelledby="itBoardTab">
+    <section class="card hf composer">
+      <h2>Pitch an idea</h2>
+      <label for="itTitle">Idea</label><input id="itTitle" maxlength="200" placeholder="e.g. Why the Silk Road was really about paper">
+      <label for="itNotes">Notes (optional)</label><textarea id="itNotes" maxlength="8000" placeholder="Angle, sources, rant potential…"></textarea>
+      <div class="acts"><button class="go" id="itShare" type="button">Share idea</button><span id="itMsg" class="mute"></span></div>
+    </section>
+    <div class="ideas-bar"><div class="chips" id="itFilters"></div><input id="itSearch" class="search" type="search" placeholder="Search ideas"></div>
+    <div id="itStatus" class="status" role="status" aria-live="polite"></div>
+    <div id="itList"></div>
   </section>
-  <div class="ideas-bar"><div class="chips" id="itFilters"></div><input id="itSearch" class="search" type="search" placeholder="Search ideas"></div>
-  <div id="itStatus" class="status" role="status" aria-live="polite"></div>
-  <div id="itList"></div>
+  <section id="itGenerator" role="tabpanel" aria-labelledby="itGeneratorTab" hidden>
+    <section class="card hf composer">
+      <h2>Generate episode ideas</h2>
+      <label for="itGenTopic">Topic or theme (optional)</label><input id="itGenTopic" maxlength="300" placeholder="e.g. trade networks, revolutions, or something unexpected">
+      <label for="itGenUnit">AP World unit (optional)</label>
+      <select id="itGenUnit"><option value="">Any unit</option><option>Unit 1 · Global Tapestry</option><option>Unit 2 · Networks of Exchange</option><option>Unit 3 · Land-Based Empires</option><option>Unit 4 · Transoceanic Interconnections</option><option>Unit 5 · Revolutions</option><option>Unit 6 · Industrialization</option><option>Unit 7 · Global Conflict</option><option>Unit 8 · Cold War &amp; Decolonization</option><option>Unit 9 · Globalization</option><option>Bonus · Off-Syllabus</option></select>
+      <div class="acts"><button class="go" id="itGenerate" type="button">Generate ideas</button><span id="itGenStatus" class="mute" role="status" aria-live="polite"></span></div>
+    </section>
+    <div id="itGenResults" class="idea-results"></div>
+  </section>
 </main>
 <script src="/emoji.js"></script>
 <script src="/host/shell.js"></script>
