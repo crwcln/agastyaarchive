@@ -25,7 +25,9 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .hnav a:hover{color:var(--ink)}.hnav a.on{background:var(--ink);color:var(--bg)}
 .hright{margin-left:auto;display:flex;gap:8px;align-items:center}
 .workspace-page{overflow-x:hidden}.workspace.hmain{max-width:1180px;padding-top:14px}
-.workspace-tabs{display:none}
+.workspace-tabs{display:flex;gap:6px;margin:0 0 8px;padding:5px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--surface) 92%,transparent);width:max-content;max-width:100%}
+.workspace-tab{display:block;padding:8px 18px;border-radius:999px;color:var(--mute);font-size:14px;font-weight:700;text-align:center;text-decoration:none;transition:background .2s,color .2s,transform .2s}
+.workspace-tab:hover{color:var(--ink)}.workspace-tab.on{background:var(--ink);color:var(--bg)}.workspace-tab:active{transform:scale(.97)}
 .workspace-slider{overflow:hidden;touch-action:pan-y}
 .workspace-track{display:flex;width:300%;align-items:flex-start;transition:transform .48s cubic-bezier(.22,.75,.22,1);will-change:transform}
 .workspace-panel{flex:0 0 33.333333%;min-width:0;padding:14px 0 42px;transition:opacity .28s,filter .28s}
@@ -40,9 +42,8 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .host-dialog::backdrop{background:#100d0bcc;backdrop-filter:blur(4px)}
 .host-dialog h2{font-size:25px}.host-dialog p{white-space:pre-line;color:var(--mute)}.host-dialog .acts{justify-content:flex-end}
 .workspace-page .hnav{display:none}
-@media(max-width:720px){.workspace-tabs{position:sticky;top:66px;z-index:15;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin:0 -4px 8px;padding:5px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(10px)}
-.workspace-tab{padding:8px 6px;border-radius:999px;color:var(--mute);font-size:13px;font-weight:700;text-align:center;text-decoration:none;transition:background .2s,color .2s,transform .2s}
-.workspace-tab.on{background:var(--ink);color:var(--bg)}.workspace-tab:active{transform:scale(.97)}
+@media(max-width:720px){.workspace-tabs{position:sticky;top:66px;z-index:15;display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));width:100%;gap:4px;margin:0 -4px 8px;padding:5px;backdrop-filter:blur(10px)}
+.workspace-tab{padding:8px 6px;font-size:13px}
 .workspace-panel{padding-top:8px}.workspace-page .hright{margin-left:auto}}
 @media(prefers-reduced-motion:reduce){.workspace-track,.workspace-panel,.host-toast,.loading-mark{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .hmain{max-width:960px;margin:0 auto;padding:28px 20px 70px;animation:rise .5s both}
