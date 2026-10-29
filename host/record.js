@@ -10,6 +10,7 @@ if(FEATURES.transcribeAudio!==true)$("hptranscribe").hidden=true;
 if(FEATURES.transcript===false)$("transcriptField").hidden=true;
 if(FEATURES.autoChapters!==true)$("chapterEditor").hidden=true;
 if(FEATURES.episodeScheduling===false)$("publishScheduleField").hidden=true;
+if(FEATURES.transcript===false&&FEATURES.autoChapters!==true)$("trCard").hidden=true;
 UNITS.forEach(u=>$("hpunit").append(new Option(u,u)));
 [1,2,3,4,5].forEach(n=>$("hprant").append(new Option("\u{1F525}".repeat(n),n,false,n===4)));
 $("hpdate").value=new Date().toISOString().slice(0,10);
@@ -36,6 +37,7 @@ function parseChapterLines(){return $("hpchapters").value.split(/\r?\n/).map(lin
 async function maybeGenerateChapters(){
   if(FEATURES.autoChapters!==true||!$("hpautoChapters").checked)return;
   const status=$("hpchapterStatus");
+  if(parseChapterLines().length){status.textContent="Using your chapter markers. Clear them to auto-generate chapters instead.";return}
   if(!transcriptWords.length){status.textContent="Chapters need a timestamped transcript; you can add chapters manually.";return}
   const bucketSeconds=15,groups=new Map();
   for(const word of transcriptWords){const time=Number(word.start),text=String(word.word||"").trim();if(!Number.isFinite(time)||!text)continue;const start=Math.floor(time/bucketSeconds)*bucketSeconds;if(!groups.has(start))groups.set(start,[]);groups.get(start).push(text)}
@@ -70,25 +72,26 @@ async function ensureUploaded(){
   uploadId=started.id;uploadedBlob=blob;uploadedParts=parts;
   return {id:uploadId,parts:uploadedParts};
 }
-const live=on=>{$("hpdot").classList.toggle("live",on);$("hpstart").disabled=on;$("hppause").disabled=!on;$("hpstop").disabled=!on;$("hppause").textContent="Pause"};
-function setAudio(b){transcriptWords=[];$("hpchapters").value="";$("hpchapterStatus").textContent="";if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);$("hpprev").hidden=false;msg((b.size/1048576).toFixed(1)+" MB ready.")}
-
-$("hpstart").onclick=async()=>{
-  try{
-    stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});
-    const mt=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(m=>MediaRecorder.isTypeSupported(m))||"";
-    rec=new MediaRecorder(stream,{...(mt?{mimeType:mt}:{}),audioBitsPerSecond:48000});chunks=[];acc=0;
-    rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
-    rec.onstop=()=>{window.AAmusic&&AAmusic.hold("rec",false);clearInterval(tick);stream.getTracks().forEach(t=>t.stop());setAudio(new Blob(chunks,{type:rec.mimeType||mt}));live(false)};
-    rec.start(1000);window.AAmusic&&AAmusic.hold("rec",true);t0=Date.now();tick=setInterval(()=>$("hptime").textContent=fmtT(elapsed()),250);live(true);msg("");
-  }catch(e){msg("Mic blocked or unavailable: "+e.message)}
-};
-$("hppause").onclick=()=>{
-  if(rec.state==="recording"){acc=elapsed();rec.pause();$("hppause").textContent="Resume";$("hpdot").classList.remove("live")}
-  else if(rec.state==="paused"){t0=Date.now();rec.resume();$("hppause").textContent="Pause";$("hpdot").classList.add("live")}
-};
-$("hpstop").onclick=()=>{acc=elapsed();rec.stop()};
-$("hpfile").onchange=e=>{const f=e.target.files[0];if(f)setAudio(f)};
+function setAudio(b){transcriptWords=[];$("hpchapters").value="";$("hpchapterStatus").textContent="";if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);msg((b.size<1048576?Math.max(1,Math.round(b.size/1024))+" KB":(b.size/1048576).toFixed(1)+" MB")+" ready.")}
+function clearAudio(){
+  if(uploadId)api({action:"discard-upload",id:uploadId}).catch(()=>{});
+  uploadId=null;uploadedBlob=null;uploadedParts=0;blob=null;transcriptWords=[];
+  $("hptr").value="";$("hpchapters").value="";$("hpchapterStatus").textContent="";$("hpprev").removeAttribute("src");msg("");
+}
+const studio=Studio.create({
+  markers:FEATURES.autoChapters===true,
+  hasAudio:()=>!!blob,
+  onStart:()=>{clearAudio();$("hppub").disabled=true},
+  onAudio:b=>{const keep=$("hpchapters").value;setAudio(b);$("hpchapters").value=keep;$("hppub").disabled=false},
+  onDiscard:clearAudio,
+  onMessage:msg,
+  onMarker:(t,n)=>{
+    const ta=$("hpchapters"),lines=ta.value.split(/\r?\n/).filter(l=>l.trim());lines.push(chapterClock(t)+" Marker "+n);
+    const secs=l=>{const m=l.match(/^(?:(\d+):)?(\d+):(\d{2})/);return m?Number(m[1]||0)*3600+Number(m[2])*60+Number(m[3]):1e9};
+    ta.value=lines.sort((a,b)=>secs(a)-secs(b)).join("\n");
+  }
+});
+$("hpfile").onchange=e=>{const f=e.target.files[0];if(f){setAudio(f);studio.showFile(f)}};
 $("hptr").oninput=()=>{transcriptWords=[]};
 $("hptranscribe").onclick=async()=>{
   const btn=$("hptranscribe"),prog=$("hpprog"),status=$("hptranscribeStatus");
@@ -175,7 +178,7 @@ msg("Preparing upload…");
     const publishAt=$("hpwhen").value?new Date($("hpwhen").value).toISOString():null;
     const res=await api({action:"publish",episode:{id,title,unit:$("hpunit").value,date:$("hpdate").value,publishAt,rant:+$("hprant").value,desc:$("hpdesc").value,transcript:$("hptr").value,transcriptWords,chapters:parseChapterLines(),size:blob.size,chunks:parts,type:(blob.type||"audio/mpeg").split(";")[0]}});
     if(res.episode.publishAt)msg("Episode "+res.episode.num+" scheduled for "+new Date(res.episode.publishAt).toLocaleString());else msg("Live! Episode "+res.episode.num+" is published.");
-    blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").hidden=true;$("hpprev").removeAttribute("src");$("hptime").textContent="0:00";["hptitle","hpdesc","hptr","hpscript","hpchapters","hpfile","hpwhen"].forEach(k=>$(k).value="");transcriptWords=[];$("hpscriptStatus").textContent="";
+    blob=null;uploadId=null;uploadedBlob=null;uploadedParts=0;$("hpprev").removeAttribute("src");studio.reset();["hptitle","hpdesc","hptr","hpscript","hpchapters","hpfile","hpwhen"].forEach(k=>$(k).value="");transcriptWords=[];$("hpscriptStatus").textContent="";
     $("hpdone").hidden=false;
   }catch(e){msg("Failed: "+e.message)}
   btn.disabled=false;prog.hidden=true;

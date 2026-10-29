@@ -1,0 +1,79 @@
+/* Recording studio: dark console that looks the same in light or dark mode. */
+[hidden]{display:none!important}
+.hmain.wide{max-width:1040px}
+.studio{--ink:#f1e7d3;--mute:#a8997f;--line:#3a2f25;--bg:#120d0a;--surface:#1c1510;--btn:#14100d;position:relative;margin-bottom:18px;padding:18px;border-radius:16px;color:var(--ink);
+  background:radial-gradient(120% 90% at 50% -10%,#2a2018,#120d0a 62%);border:1px solid #4a3b2c;box-shadow:0 24px 60px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.07);overflow:hidden;animation:rise .5s both}
+.studio::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.015) 0 1px,transparent 1px 3px)}
+.studio>*{position:relative}
+.st-top{display:grid;grid-template-columns:auto 1fr minmax(190px,280px);gap:18px;align-items:center;margin-bottom:14px}
+.st-id{display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-width:0}
+.st-id select{max-width:190px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#0e0a07;color:var(--mute);font-size:12px}
+.onair{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border:2px solid #4b2623;border-radius:6px;color:#6b3a35;font:700 12px 'Space Grotesk',sans-serif;letter-spacing:.2em;text-transform:uppercase;transition:color .25s,border-color .25s}
+.onair i{width:9px;height:9px;border-radius:50%;background:currentColor}
+[data-state="live"] .onair{color:#facc15;border-color:#7a6410}
+[data-state="rec"] .onair{color:#ff453a;border-color:#ff453a;box-shadow:0 0 20px rgba(255,69,58,.55),inset 0 0 12px rgba(255,69,58,.25);animation:onair 1.4s ease-in-out infinite}
+[data-state="paused"] .onair{color:#facc15;border-color:#facc15;animation:blink 1s steps(2) infinite}
+[data-state="review"] .onair{color:#4ade80;border-color:#1f6b3f}
+@keyframes onair{50%{box-shadow:0 0 34px rgba(255,69,58,.85),inset 0 0 16px rgba(255,69,58,.4)}}
+@keyframes blink{50%{opacity:.35}}
+.st-clock{text-align:center}
+.st-clock b{display:block;font:700 clamp(44px,9vw,76px)/1 'Space Grotesk',sans-serif;font-variant-numeric:tabular-nums;text-shadow:0 0 24px rgba(255,255,255,.08);transition:color .2s}
+[data-state="rec"] .st-clock b{color:#ff6a5f}
+.st-clock small{display:block;min-height:1.3em;margin-top:4px;color:var(--mute);font-size:14px;font-variant-numeric:tabular-nums}
+.st-vu{position:relative;padding-top:12px}
+.st-vu canvas{display:block;width:100%;height:14px}
+.st-scale{display:flex;justify-content:space-between;margin-top:4px;color:var(--mute);font-size:10px}
+.clip{position:absolute;right:0;top:-6px;padding:1px 6px;border:1px solid #5a2320;border-radius:3px;color:#6b3a35;font:700 9px 'Space Grotesk',sans-serif;font-style:normal;letter-spacing:.14em;transition:all .15s}
+.clip.on{background:#ff3b30;border-color:#ff3b30;color:#fff;box-shadow:0 0 12px #ff3b30}
+.st-wave{position:relative;height:180px;border-radius:12px;background:linear-gradient(#0d0907,#15110d);border:1px solid #2c231b;box-shadow:inset 0 2px 14px rgba(0,0,0,.6);overflow:hidden}
+.st-wave canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+[data-mode="review"] .st-wave canvas{cursor:ew-resize}
+.st-empty{position:absolute;inset:0;display:grid;place-items:center;padding:0 24px;text-align:center;color:var(--mute);font-size:14px;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 11px,rgba(241,231,211,.04) 11px 12px)}
+.st-empty[hidden]{display:none}
+.st-transport{display:flex;justify-content:center;align-items:flex-end;flex-wrap:wrap;gap:14px;margin-top:18px}
+.studio .tbtn{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:68px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid #3a2f25;color:var(--ink);font:500 11px 'Space Grotesk',sans-serif;letter-spacing:.07em;text-transform:uppercase;cursor:pointer;transition:transform .15s,border-color .2s,background .2s}
+.studio .tbtn:hover:not(:disabled){background:rgba(255,255,255,.08);border-color:var(--gold)}
+.studio .tbtn:disabled{opacity:.35;cursor:default}
+.studio .tbtn svg{width:22px;height:22px;fill:currentColor}
+.studio .tbtn.flash{border-color:var(--gold);box-shadow:0 0 18px rgba(224,176,74,.55)}
+.studio .recbtn{width:82px;height:82px;padding:0;border-radius:50%;border:3px solid var(--ink);background:transparent;display:grid;place-items:center;cursor:pointer}
+.recbtn i{display:block;width:58px;height:58px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ff6a5f,#d92d20);box-shadow:0 0 20px rgba(255,59,48,.45);transition:border-radius .2s,transform .2s}
+.studio .recbtn:hover i{transform:scale(1.06)}
+[data-state="rec"] .recbtn,[data-state="paused"] .recbtn{animation:ring 1.6s ease-out infinite}
+[data-state="rec"] .recbtn i,[data-state="paused"] .recbtn i{border-radius:10px;transform:scale(.58)}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(255,59,48,.55)}100%{box-shadow:0 0 0 20px rgba(255,59,48,0)}}
+.st-review{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:14px;margin-top:16px;padding-top:14px;border-top:1px solid #2c231b;color:var(--mute);font-size:13px}
+.st-review[hidden]{display:none}
+.studio .playbtn{width:52px;height:52px;padding:0;border-radius:50%;border:0;background:var(--gold);color:#1c1510;display:grid;place-items:center;cursor:pointer}
+.playbtn svg{width:22px;height:22px;fill:currentColor}.playbtn .ic-pause{display:none}
+.playbtn.playing .ic-play{display:none}.playbtn.playing .ic-pause{display:block}
+.studio [data-hide-rec]{}
+/* filter rack */
+.rack{margin-bottom:18px;padding:0}
+.rack summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px;cursor:pointer;list-style:none;font:900 24px 'Playfair Display',Georgia,serif}
+.rack summary::-webkit-details-marker{display:none}
+.rack summary small{margin-left:auto;font:400 13px 'Space Grotesk',sans-serif;color:var(--mute)}
+.rack summary::after{content:"▾";color:var(--mute);font:400 16px sans-serif;transition:transform .2s}
+.rack[open] summary::after{transform:rotate(180deg)}
+.rack .in{padding:0 20px 20px}
+.rack .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.rack .chip{padding:6px 14px;border:1px solid var(--line);border-radius:99px;background:transparent;color:var(--mute);font-size:13px}
+.rack .chip.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.rack .custom{align-self:center;font-size:12px;color:var(--gold);letter-spacing:.08em;text-transform:uppercase}
+.sliders{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 24px}
+.sl{display:grid;grid-template-columns:1fr auto;gap:4px 8px;color:var(--mute);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.sl output{color:var(--ink);font-variant-numeric:tabular-nums}
+.sl input{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.toggles{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:14px}
+.toggles label{display:flex;align-items:center;gap:8px;cursor:pointer}
+.rack .fine{margin:12px 0 0;color:var(--mute);font-size:12px}
+/* page sections */
+.sec{margin-bottom:18px}
+.sec>h2{font-size:26px;margin-bottom:6px}
+.hf .script-generator .r2{grid-template-columns:1fr 1fr}
+.pubbar{position:sticky;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:15;display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 18px;border:1px solid var(--gold);border-radius:12px;background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(10px);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.pubbar progress{flex:1 1 100%}
+.pubbar .done{margin-left:auto}
+@media (max-width:560px){.st-transport{flex-wrap:nowrap;gap:8px}.studio .tbtn{flex:1 1 0;min-width:0;padding:8px 4px;font-size:10px;letter-spacing:.03em}.studio .tbtn svg{width:20px;height:20px}.studio .recbtn{flex:none;width:72px;height:72px}.recbtn i{width:50px;height:50px}.pubbar{padding:10px 12px}}
+@media (max-width:760px){.st-top{grid-template-columns:1fr}.st-clock{order:-1}.st-id{flex-direction:row;align-items:center;flex-wrap:wrap}.st-wave{height:150px}}
+@media (prefers-reduced-motion:reduce){[data-state="rec"] .onair,[data-state="rec"] .recbtn,[data-state="paused"] .recbtn{animation:none}}
