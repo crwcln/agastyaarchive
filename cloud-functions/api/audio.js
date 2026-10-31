@@ -4,6 +4,7 @@ import { getStore } from "@edgeone/pages-blob";
 import { timingSafeEqual } from "node:crypto";
 
 const CHUNK = 2 * 1024 * 1024;
+const published = new Map(); // id -> {id, size, type}: published audio never changes, so each server instance remembers it
 const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length === y.length && timingSafeEqual(x, y); };
 
 async function handle({ request, env }) {
@@ -16,10 +17,14 @@ async function handle({ request, env }) {
     if (!draft || !draft.audio) return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
     audio = draft.audio;priv = true;
   } else {
-    const idx = await store.get("episodes.json", { type: "json" });
-    const ep = idx && idx.episodes.find(x => x.id === id);
-    if (!ep || (ep.publishAt && Date.parse(ep.publishAt) > Date.now())) return new Response("Not found", { status: 404 });
-    audio = ep;
+    audio = published.get(id); // skips downloading the whole episode index for every 2 MB range request
+    if (!audio) {
+      const idx = await store.get("episodes.json", { type: "json" });
+      const ep = idx && idx.episodes.find(x => x.id === id);
+      if (!ep || (ep.publishAt && Date.parse(ep.publishAt) > Date.now())) return new Response("Not found", { status: 404 });
+      audio = { id: ep.id, size: ep.size, type: ep.type };
+      if (!ep.publishAt) published.set(id, audio);
+    }
   }
   const size = audio.size;
   let start = 0, end = size - 1, ranged = false;
@@ -41,7 +46,7 @@ async function handle({ request, env }) {
     status: partial ? 206 : 200,
     headers: {
       "Content-Type": audio.type || "audio/webm", "Accept-Ranges": "bytes",
-      "Content-Length": String(body.byteLength), "Cache-Control": priv ? "private, no-store" : "public, max-age=86400",
+      "Content-Length": String(body.byteLength), "Cache-Control": priv ? "private, no-store" : "public, max-age=31536000, immutable",
       ...(partial ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}),
     },
   });

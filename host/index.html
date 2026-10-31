@@ -5,12 +5,42 @@
 <meta name="robots" content="noindex,nofollow">
 <script src="/site-config.js"></script>
 <link rel="icon" type="image/svg+xml" href="/logo.svg">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap"></noscript>
+<style id="boot-css">
+#boot{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:#f4ecdc;color:#2a1f16;opacity:0;animation:bootIn .35s .2s forwards}
+@media (prefers-color-scheme:dark){#boot{background:#14100d;color:#f1e7d3}}
+#boot.out{animation:bootOut .45s forwards;pointer-events:none}
+.boot-card{display:grid;justify-items:center;gap:14px;padding:24px;text-align:center}
+.boot-logo{width:116px;height:116px;overflow:visible;filter:drop-shadow(0 10px 26px rgba(184,74,23,.35))}
+.boot-logo .orbit{transform-box:view-box;transform-origin:64px 64px;animation:bootSpin 2.6s linear infinite}
+.boot-logo .pop{transform-box:fill-box;transform-origin:center;animation:bootPop .8s cubic-bezier(.2,1.3,.4,1) both}
+.boot-logo .p2{animation-delay:.12s}.boot-logo .p3{animation-delay:.24s}
+.boot-title{font:900 23px/1.1 'Playfair Display',Georgia,serif}
+.boot-bar{width:190px;height:4px;border-radius:99px;overflow:hidden;background:rgba(127,127,127,.25)}
+.boot-bar i{display:block;width:40%;height:100%;border-radius:99px;background:linear-gradient(90deg,#b84a17,#e0b04a);animation:bootBar 1.25s ease-in-out infinite}
+.boot-text{font:500 13px 'Space Grotesk',system-ui,sans-serif;letter-spacing:.05em;opacity:.7}
+body.booting{overflow:hidden}
+@keyframes bootIn{to{opacity:1}}@keyframes bootOut{from{opacity:1}to{opacity:0}}
+@keyframes bootSpin{to{transform:rotate(360deg)}}@keyframes bootBar{from{transform:translateX(-110%)}to{transform:translateX(260%)}}
+@keyframes bootPop{from{opacity:0;transform:scale(.55)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.boot-logo .orbit,.boot-bar i{animation:none}.boot-bar i{width:100%}}
+</style>
 <link rel="stylesheet" href="/host/host.css">
 <link rel="stylesheet" href="/host/extras.css">
 <link rel="stylesheet" href="/host/studio.css">
 </head>
-<body data-page="workspace" class="workspace-page">
+<body data-page="workspace" class="workspace-page booting">
+<div id="boot" role="status" aria-live="polite" aria-label="Loading"><div class="boot-card">
+<svg class="boot-logo" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="bpaper" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f8edda"/><stop offset="1" stop-color="#dfc99e"/></linearGradient><linearGradient id="bink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d47736"/><stop offset="1" stop-color="#8f321b"/></linearGradient></defs>
+<circle cx="64" cy="64" r="60" fill="#211710"/><circle cx="64" cy="64" r="53" fill="url(#bpaper)" stroke="#bb762c" stroke-width="2"/>
+<g class="orbit"><circle cx="64" cy="64" r="58" fill="none" stroke="#e0b04a" stroke-width="3" stroke-linecap="round" stroke-dasharray="60 305"/></g>
+<path class="pop" d="M25 92V38q19-7 39 5 20-12 39-5v54q-19-7-39 5-20-12-39-5Z" fill="#fbf5e9" stroke="#57321d" stroke-linejoin="round" stroke-width="3"/>
+<path class="pop p2" d="M64 44v52M33 49q13-3 24 3M33 60q13-3 24 3M33 71q13-3 24 3M71 52q11-6 24-3M71 63q11-6 24-3M71 74q11-6 24-3" fill="none" stroke="#b89971" stroke-linecap="round" stroke-width="2"/>
+<path class="pop p3" d="m47 86 17-44 17 44h-9l-8-22-8 22Z" fill="url(#bink)" stroke="#5b2819" stroke-linejoin="round" stroke-width="2"/><path class="pop p3" d="M55 72h18" stroke="#f8edda" stroke-linecap="round" stroke-width="3"/></svg>
+<div class="boot-title">The Agastya Archive</div><div class="boot-bar"><i></i></div><div class="boot-text">Opening your studio…</div></div></div>
+<noscript><style>#boot{display:none}body.booting{overflow:auto}</style></noscript>
+<script src="/boot.js"></script>
 <div id="hdr"></div><div id="gate"></div>
 <main class="workspace hmain" id="app" hidden>
   <div class="workspace-tabs" role="tablist" aria-label="Host workspace">

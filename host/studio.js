@@ -1,7 +1,7 @@
 // Studio: live mic chain with filters, Voice-Memos-style waveform, level meter, chapter markers and review playback.
 // Filters shape the live recording (they are baked into the audio). Imported files are used as-is.
 window.Studio=(()=>{
-const $=id=>document.getElementById(id);
+const $=id=>document.getElementById(id)||document.createElement("div");
 const PRESETS={
   "Natural":  {gain:0,hp:60, warm:0, pres:0, air:0, lp:20000,comp:15,gate:-80,rev:0, echo:0},
   "Podcast":  {gain:3,hp:90, warm:2, pres:4, air:2, lp:20000,comp:55,gate:-60,rev:0, echo:0},
@@ -27,11 +27,10 @@ function create(opts){
   const save=()=>{try{localStorage.setItem("aa_studio_v1",JSON.stringify({preset,S,ns,ec}))}catch(e){}};
   const el={studio:$("studio"),wave:$("stwave"),meter:$("stmeter"),dev:$("stdev"),empty:$("stempty"),review:$("streview"),
     start:$("hpstart"),pause:$("hppause"),mark:$("stmark"),check:$("stcheck"),play:$("stplay"),redo:$("stredo"),time:$("hptime"),total:$("sttotal"),clip:$("stclip"),mode:$("stmode")};
-  el.editor=$("steditor");el.selection=$("stselection");el.cut=$("stcut");el.trim=$("sttrim");el.replace=$("streplacefile");el.replaceLabel=$("streplaceLabel");el.undo=$("stundo");el.redoEdit=$("stredoedit");el.clear=$("stclear");
   const audio=$("hpprev");
   let ctx,stream,nodes={},rec,chunks=[],mime="",open=false,recording=false,paused=false,checking=false;
   let t0=0,acc=0,hist=[],roll=[],markers=[],pk=0,nextBar=0,raf=0,pl=0,gateTimer=0,gateThr=-80,holdUntil=0;
-  let mode="idle",peaks=null,curDur=0,lvl=-80,pkHold=-80,clipUntil=0,fileTok=0,seeking=false,dragStart=null,selection=null,undoStack=[],redoStack=[];
+  let clip=null,mode="idle",peaks=null,curDur=0,lvl=-80,pkHold=-80,clipUntil=0,fileTok=0,seeking=false,dragStart=null,selection=null,undoStack=[],redoStack=[];
 
   /* ---------- filter rack UI ---------- */
   const outs={},ranges={};
@@ -113,7 +112,7 @@ function create(opts){
     pk=Math.max(pk,p);
     if(!paused&&now>=nextBar){const k=Math.max(1,Math.floor((now-nextBar)/50)+1);
       for(let i=0;i<k;i++){roll.push(pk);if(recording)hist.push(pk)}pk=0;nextBar+=k*50;if(roll.length>900)roll.splice(0,roll.length-900)}
-    if(recording)el.time.textContent=clockT(elapsed());
+    if(recording)el.time.textContent=clockT(elapsed());else if(clip)el.time.textContent=clockT((performance.now()-clip.t0)/1000);
     draw();
   }
 
@@ -154,32 +153,26 @@ function create(opts){
 
   /* ---------- UI state ---------- */
   function ui(){
-    const st=recording?(paused?"paused":"rec"):open?"live":mode==="review"?"review":"idle";
+    const st=(recording||clip)?(paused?"paused":"rec"):open?"live":mode==="review"?"review":"idle";
     el.studio.dataset.state=st;el.studio.dataset.mode=mode;el.mode.textContent=STATES[st];
     el.start.setAttribute("aria-label",recording?"Stop recording":"Start recording");el.start.title=recording?"Stop":"Record";
     el.pause.disabled=!recording;el.pause.querySelector("span").textContent=paused?"Resume":"Pause";
-    el.check.disabled=recording;el.check.querySelector("span").textContent=open&&!recording?"Stop check":"Mic check";
+    el.check.disabled=recording||!!clip;el.check.querySelector("span").textContent=open&&!recording?"Stop check":"Mic check";
     el.mark.disabled=!(recording||mode==="review");el.empty.hidden=!(mode==="idle"&&!open&&!recording);
-    el.review.hidden=!(mode==="review"&&!recording);el.dev.disabled=recording;
-    el.play.classList.toggle("playing",!audio.paused&&mode==="review");
-    const editable=mode==="review"&&!recording&&!!(opts.hasAudio&&opts.hasAudio());
-    el.editor.hidden=!editable;
-    el.cut.disabled=el.trim.disabled=el.replace.disabled=el.clear.disabled=!editable||!selection;
-    el.replaceLabel.classList.toggle("disabled",!editable||!selection);
-    el.undo.disabled=!undoStack.length;
-    el.redoEdit.disabled=!redoStack.length;
-    el.selection.textContent=selection?clockT(selection.start)+" – "+clockT(selection.end):"None";
+    el.dev.disabled=recording||!!clip;
+    // in review the editor takes over from the live waveform
+    const waveBox=el.wave.parentElement;if(waveBox)waveBox.hidden=!!(opts.editor&&mode==="review"&&!open&&!recording&&!clip);
   }
 
   /* ---------- recording ---------- */
   async function start(){
-    if(recording)return;
+    if(recording||clip)return;
     if(mode==="review"&&opts.hasAudio&&opts.hasAudio()&&!(await (opts.confirm?opts.confirm("Replace the current audio? This can’t be undone.","Replace recording"):Promise.resolve(window.confirm("Replace the current audio? This can’t be undone.")))))return;
     audio.pause();
     try{await openMic()}catch(e){opts.onMessage&&opts.onMessage("Mic blocked or unavailable: "+e.message);return}
     const mt=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||"";mime=mt;
     rec=new MediaRecorder(nodes.dest.stream,{...(mt?{mimeType:mt}:{}),audioBitsPerSecond:48000});
-    chunks=[];hist=[];markers=[];peaks=null;selection=null;undoStack=[];redoStack=[];acc=0;mode="idle";
+    chunks=[];hist=[];markers=[];peaks=null;selection=null;undoStack=[];redoStack=[];acc=0;mode="idle";if(opts.editor)opts.editor.reset();
     rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);rec.onstop=finish;
     rec.start(1000);recording=true;paused=false;t0=performance.now();nextBar=t0;
     opts.onStart&&opts.onStart();el.time.textContent=clockT(0);el.total.textContent="";ui();
@@ -190,6 +183,7 @@ function create(opts){
     recording=false;paused=false;checking=false;closeMic();
     mode="review";peaks=hist.slice();curDur=dur;
     opts.onAudio&&opts.onAudio(b);
+    if(opts.editor)opts.editor.load(b);
     audio.addEventListener("loadedmetadata",fixDur,{once:true});
     el.time.textContent=clockT(0);el.total.textContent="/ "+clockT(dur);ui();draw();
   }
@@ -200,13 +194,13 @@ function create(opts){
   el.pause.onclick=()=>{if(!recording)return;if(!paused){acc=elapsed();rec.pause();paused=true}else{t0=performance.now();nextBar=t0;rec.resume();paused=false}ui()};
   el.check.onclick=()=>{if(recording)return;if(open){checking=false;closeMic()}else{checking=true;openMic().catch(e=>{checking=false;opts.onMessage&&opts.onMessage("Mic blocked or unavailable: "+e.message)})}};
   el.mark.onclick=()=>{
-    const t=recording?elapsed():cur();markers.push({t});opts.onMarker&&opts.onMarker(t,markers.length);
+    const t=recording?elapsed():(opts.editor?opts.editor.playhead():cur());markers.push({t});opts.onMarker&&opts.onMarker(t,markers.length);
     el.mark.classList.add("flash");setTimeout(()=>el.mark.classList.remove("flash"),400);draw();
   };
   if(opts.markers===false)el.mark.hidden=true;
 
   /* ---------- review ---------- */
-  function reset(){audio.pause();mode="idle";peaks=null;hist=[];markers=[];selection=null;undoStack=[];redoStack=[];curDur=0;fileTok++;el.time.textContent=clockT(0);el.total.textContent="";ui();draw()}
+  function reset(){audio.pause();if(opts.editor)opts.editor.reset();mode="idle";peaks=null;hist=[];markers=[];selection=null;undoStack=[];redoStack=[];curDur=0;fileTok++;el.time.textContent=clockT(0);el.total.textContent="";ui();draw()}
   el.redo.onclick=async()=>{if(await (opts.confirm?opts.confirm("Discard this recording and start over?","Discard recording"):Promise.resolve(window.confirm("Discard this recording and start over?")))){reset();opts.onDiscard&&opts.onDiscard()}};
   el.play.onclick=()=>{if(mode!=="review")return;if(audio.paused){if(audio.ended)audio.currentTime=0;audio.play()}else audio.pause()};
   const playLoop=()=>{draw();el.time.textContent=clockT(cur());if(!audio.paused&&!audio.ended)pl=requestAnimationFrame(playLoop)};
@@ -228,73 +222,6 @@ function create(opts){
   const endSelection=e=>{if(!seeking)return;const end=pointerTime(e);seeking=false;if(dragStart!==null&&end!==null&&Math.abs(end-dragStart)>.12){setSelection(dragStart,end);audio.currentTime=Math.min(dragStart,end)}else seek(e);dragStart=null};
   ["pointerup","pointercancel"].forEach(ev=>el.wave.addEventListener(ev,endSelection));
 
-  function writeWav(buffer){
-    const channels=buffer.numberOfChannels,frames=buffer.length,dataSize=frames*channels*2,bytes=new ArrayBuffer(44+dataSize),view=new DataView(bytes);
-    const text=(offset,value)=>{for(let i=0;i<value.length;i++)view.setUint8(offset+i,value.charCodeAt(i))};
-    text(0,"RIFF");view.setUint32(4,36+dataSize,true);text(8,"WAVE");text(12,"fmt ");view.setUint32(16,16,true);view.setUint16(20,1,true);
-    view.setUint16(22,channels,true);view.setUint32(24,buffer.sampleRate,true);view.setUint32(28,buffer.sampleRate*channels*2,true);view.setUint16(32,channels*2,true);view.setUint16(34,16,true);text(36,"data");view.setUint32(40,dataSize,true);
-    const samples=Array.from({length:channels},(_,channel)=>buffer.getChannelData(channel));let offset=44;
-    for(let frame=0;frame<frames;frame++)for(let channel=0;channel<channels;channel++){const sample=Math.max(-1,Math.min(1,samples[channel][frame]));view.setInt16(offset,sample<0?sample*32768:sample*32767,true);offset+=2}
-    return new Blob([bytes],{type:"audio/wav"});
-  }
-  function remember(stack,file){
-    stack.push(file);
-    while(stack.length>2||stack.reduce((sum,item)=>sum+item.size,0)>240*1024*1024)stack.shift();
-  }
-  async function editAudio(kind,replacementBlob){
-    if(!selection||!opts.getAudio)return;
-    const originalBlob=opts.getAudio();
-    if(originalBlob.size>120*1024*1024)throw new Error("Audio edits are limited to 120 MB to protect this device’s memory.");
-    const AC=window.AudioContext||window.webkitAudioContext,context=new AC();
-    try{
-      const original=await context.decodeAudioData(await originalBlob.arrayBuffer()),rate=original.sampleRate;
-      const start=Math.floor(selection.start*rate),end=Math.min(original.length,Math.floor(selection.end*rate));
-      let replacement=null;
-      if(kind==="replace"){
-        replacement=await context.decodeAudioData(await replacementBlob.arrayBuffer());
-        if(replacement.sampleRate!==rate){
-          const Offline=window.OfflineAudioContext||window.webkitOfflineAudioContext;
-          if(!Offline)throw new Error("This browser cannot resample replacement audio.");
-          const offline=new Offline(Math.min(original.numberOfChannels,2),Math.ceil(replacement.duration*rate),rate),source=offline.createBufferSource();
-          source.buffer=replacement;source.connect(offline.destination);source.start();replacement=await offline.startRendering();
-        }
-      }
-      const left=kind==="trim"?0:start,right=kind==="trim"?0:original.length-end,insertLength=kind==="trim"?end-start:kind==="replace"?replacement.length:0;
-      const frames=kind==="trim"?insertLength:left+insertLength+right;
-      if(!frames)throw new Error("This edit would leave no audio.");
-      const output=context.createBuffer(original.numberOfChannels,frames,rate);
-      for(let channel=0;channel<output.numberOfChannels;channel++){
-        const out=output.getChannelData(channel),source=original.getChannelData(channel);
-        if(kind==="trim")out.set(source.subarray(start,end));
-        else{
-          out.set(source.subarray(0,start),0);
-          if(kind==="replace"){const insert=replacement.getChannelData(Math.min(channel,replacement.numberOfChannels-1));out.set(insert.subarray(0,insertLength),start)}
-          if(right)out.set(source.subarray(end),start+insertLength);
-        }
-      }
-      const result=writeWav(output);remember(undoStack,originalBlob);redoStack=[];
-      opts.onAudio&&opts.onAudio(result);selection=null;showFile(result,true);ui();
-      opts.onMessage&&opts.onMessage(kind==="cut"?"Selection removed. Undo is available.":kind==="trim"?"Audio trimmed to the selection. Undo is available.":"Selection replaced. Undo is available.");
-    }finally{await context.close()}
-  }
-  async function runEdit(kind,file){
-    el.cut.disabled=el.trim.disabled=el.replace.disabled=el.undo.disabled=true;
-    try{await editAudio(kind,file)}catch(error){opts.onMessage&&opts.onMessage("Audio edit failed: "+error.message)}
-    finally{ui()}
-  }
-  el.cut.onclick=()=>runEdit("cut");
-  el.trim.onclick=()=>runEdit("trim");
-  el.replace.onchange=event=>{const file=event.target.files[0];if(file)runEdit("replace",file);event.target.value=""};
-  el.clear.onclick=()=>setSelection(null,null);
-  el.undo.onclick=()=>{
-    const previous=undoStack.pop();if(!previous)return;
-    remember(redoStack,opts.getAudio());opts.onAudio&&opts.onAudio(previous);selection=null;showFile(previous,true);ui();opts.onMessage&&opts.onMessage("Last audio edit undone.");
-  };
-  el.redoEdit.onclick=()=>{
-    const next=redoStack.pop();if(!next)return;
-    remember(undoStack,opts.getAudio());opts.onAudio&&opts.onAudio(next);selection=null;showFile(next,true);ui();opts.onMessage&&opts.onMessage("Audio edit redone.");
-  };
-
   async function peaksFromFile(f){
     if(f.size>60e6)return null;
     try{const AC=window.OfflineAudioContext||window.webkitOfflineAudioContext,buf=await new AC(1,1,8000).decodeAudioData(await f.arrayBuffer());
@@ -307,6 +234,7 @@ function create(opts){
     if(!keepHistory){undoStack=[];redoStack=[]}
     selection=null;
     mode="review";markers=[];peaks=null;curDur=0;const tok=++fileTok;el.time.textContent=clockT(0);el.total.textContent="";ui();draw();
+    if(opts.editor){opts.editor.load(f);return}
     peaksFromFile(f).then(r=>{if(tok!==fileTok)return;if(r){peaks=r.peaks;curDur=r.dur;el.total.textContent="/ "+clockT(r.dur)}draw()});
   }
 
@@ -314,11 +242,28 @@ function create(opts){
   addEventListener("keydown",e=>{
     const t=e.target;if(e.metaKey||e.ctrlKey||e.altKey||(t.closest&&t.closest("input,textarea,select")))return;
     if(e.key==="m"||e.key==="M"){if(!el.mark.disabled&&!el.mark.hidden){e.preventDefault();el.mark.click()}}
-    else if(e.key===" "&&!(t.closest&&t.closest("button,a,summary"))){if(recording){e.preventDefault();el.pause.click()}else if(mode==="review"){e.preventDefault();el.play.click()}}
+    else if(e.key===" "&&!(t.closest&&t.closest("button,a,summary"))){if(recording){e.preventDefault();el.pause.click()}else if(mode==="review"&&!opts.editor){e.preventDefault();el.play.click()}}
   });
-  addEventListener("pagehide",()=>{if(open&&!recording)closeMic()});
+  addEventListener("pagehide",()=>{if(open&&!recording&&!clip)closeMic()});
+  /* ---------- punch-in: record a short clip through the same filters, for the editor ---------- */
+  async function recordClip(){
+    if(recording||clip)throw new Error("Already recording.");
+    const wasOpen=open;
+    await openMic();
+    const mt=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||"",
+      r=new MediaRecorder(nodes.dest.stream,{...(mt?{mimeType:mt}:{}),audioBitsPerSecond:48000}),parts=[];
+    r.ondataavailable=e=>e.data.size&&parts.push(e.data);
+    const c=clip={r,t0:performance.now()};
+    const release=()=>{clip=null;if(!wasOpen&&!checking)closeMic();ui()};
+    r.start(250);nextBar=performance.now();ui();
+    return{
+      elapsed:()=>(performance.now()-c.t0)/1000,
+      stop:()=>new Promise(resolve=>{r.onstop=()=>{release();resolve(new Blob(parts,{type:r.mimeType||mt||"audio/webm"}))};if(r.state!=="inactive")r.stop();else r.onstop()}),
+      cancel:()=>{r.ondataavailable=null;r.onstop=release;if(r.state!=="inactive")r.stop();else release()}
+    };
+  }
   ui();draw();
-  return{reset,showFile};
+  return{reset,showFile,recordClip};
 }
 return{create};
 })();

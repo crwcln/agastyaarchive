@@ -22,6 +22,18 @@ const newestFirst = (a, c) => Date.parse(c.updatedAt) - Date.parse(a.updatedAt);
 const reactionTotals = c => Object.fromEntries(REACTIONS.map(r => [r, Math.max(0, Number(c && c[r]) || 0)]));
 const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length === y.length && timingSafeEqual(x, y); };
+// ---- speed: tiny in-instance caches, and heavy transcript data kept out of the shared episode index ----
+const memo = { index: null, indexAt: 0, list: null, listAt: 0, analytics: null, analyticsAt: 0 };
+const INDEX_TTL = 5000, LIST_TTL = 5000, ANALYTICS_TTL = 30000;
+const heavyKey = id => `ep-data/${id}.json`;
+const hasWordsIn = ep => Array.isArray(ep.transcriptWords) && ep.transcriptWords.length > 0;
+const lightEpisode = ep => { const { transcript, transcriptWords, ...rest } = ep; return { ...rest, hasTranscript: !!(transcript || ep.hasTranscript), hasWords: hasWordsIn(ep) || !!ep.hasWords }; };
+const answer = (request, payload, status = 200) => { // JSON with an ETag so repeat visits get a tiny 304 instead of the whole list
+  const body = JSON.stringify(payload), etag = '"' + createHash("sha1").update(body).digest("base64url").slice(0, 22) + '"';
+  const headers = { "ETag": etag, "Cache-Control": "no-cache" };
+  if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
+  return new Response(body, { status, headers: { ...headers, "Content-Type": "application/json" } });
+};
 const interactionFailure = result => {
   const message = value => typeof value === "string" ? value : value && typeof value === "object" ? String(value.message || value.detail || value.description || value.reason || value.code || "") : "";
   const details = [result.error, result.error_message, result.errorMessage, result.last_error, result.lastError, result.failure_reason, result.failureReason, result.failure_details, result.status_details, result.status_message, result.message, result.details].map(message).filter(Boolean);
@@ -39,12 +51,41 @@ async function handle(context) {
   const { request } = context, env = context.env || {};
   const store = getStore({ name: "archive", consistency: "strong" });
   const load = async () => (await store.get("episodes.json", { type: "json" })) || { episodes: [] };
+  const fast = getStore({ name: "archive" }); // eventual-consistency reads are quicker; used for public pages
+  const loadFast = async () => {
+    if (memo.index && Date.now() - memo.indexAt < INDEX_TTL) return memo.index;
+    const idx = (await fast.get("episodes.json", { type: "json" })) || { episodes: [] };
+    memo.index = idx; memo.indexAt = Date.now(); return idx;
+  };
+  const saveIndex = async idx => { await store.setJSON("episodes.json", idx); memo.index = idx; memo.indexAt = Date.now(); memo.list = null; };
+  const readHeavy = async (ep, st = fast) => {
+    if (ep.transcript || hasWordsIn(ep)) return { transcript: ep.transcript || "", transcriptWords: Array.isArray(ep.transcriptWords) ? ep.transcriptWords : [] };
+    const d = await st.get(heavyKey(ep.id), { type: "json" }).catch(() => null);
+    return { transcript: d && d.transcript || "", transcriptWords: d && Array.isArray(d.transcriptWords) ? d.transcriptWords : [] };
+  };
+  const migrateHeavy = async idx => { // one-time: move inline transcripts/word timings out of the index so it stays small
+    const legacy = idx.episodes.filter(e => e.transcript || hasWordsIn(e));
+    if (!legacy.length) return false;
+    await Promise.all(legacy.map(e => store.setJSON(heavyKey(e.id), { transcript: e.transcript || "", transcriptWords: Array.isArray(e.transcriptWords) ? e.transcriptWords : [] })));
+    legacy.forEach(e => { e.hasTranscript = !!e.transcript; e.hasWords = hasWordsIn(e); delete e.transcript; delete e.transcriptWords; });
+    return true;
+  };
 
   if (request.method === "GET") {
-    const idx = await load(), now = Date.now();
-    const episodes = idx.episodes.filter(e => !e.publishAt || Date.parse(e.publishAt) <= now);
-    const counts = await Promise.all(episodes.map(e => store.get(`reactions/c/${e.id}.json`, { type: "json" }).catch(() => null)));
-    return json({ episodes: episodes.map((e, i) => ({ ...e, reactions: reactionTotals(counts[i]) })) });
+    const url = new URL(request.url), wanted = url.searchParams.get("id");
+    if (wanted) { // the full transcript of one published episode, fetched only when a listener opens it
+      if (!ID_RE.test(wanted)) return json({ error: "Episode not found" }, 404);
+      const idx = await loadFast(), ep = idx.episodes.find(e => e.id === wanted);
+      if (!ep || (ep.publishAt && Date.parse(ep.publishAt) > Date.now())) return json({ error: "Episode not found" }, 404);
+      return answer(request, { id: wanted, ...(await readHeavy(ep)) });
+    }
+    if (!memo.list || Date.now() - memo.listAt >= LIST_TTL) {
+      const idx = await loadFast(), now = Date.now();
+      const episodes = idx.episodes.filter(e => !e.publishAt || Date.parse(e.publishAt) <= now);
+      const counts = await Promise.all(episodes.map(e => fast.get(`reactions/c/${e.id}.json`, { type: "json" }).catch(() => null)));
+      memo.list = { episodes: episodes.map((e, k) => ({ ...lightEpisode(e), reactions: reactionTotals(counts[k]) })) }; memo.listAt = Date.now();
+    }
+    return answer(request, memo.list);
   }
   if (request.method !== "POST" && request.method !== "PUT") return json({ error: "Method not allowed" }, 405);
 
@@ -56,7 +97,7 @@ async function handle(context) {
       if (!/^[a-z0-9]{6,20}$/.test(id) || !/^[a-f0-9]{32}$/.test(listener) || !Number.isInteger(localHour) || localHour < 0 || localHour > 23) {
         return json({ error: "Bad listening event" }, 400);
       }
-      const idx = await load(), episode = idx.episodes.find(item => item.id === id);
+      const idx = await loadFast(), episode = idx.episodes.find(item => item.id === id);
       if (!episode || (episode.publishAt && Date.parse(episode.publishAt) > Date.now())) return json({ error: "Episode not found" }, 404);
       const day = new Date().toISOString().slice(0, 10), visitorHash = createHash("sha256").update(listener).digest("hex");
       const key = `analytics/listens/${day}/${String(localHour).padStart(2, "0")}/${visitorHash}/${id}.json`;
@@ -66,20 +107,20 @@ async function handle(context) {
     if (b.action === "react") {
       const id = String(b.id || ""), listener = String(b.listener || ""), reaction = b.reaction === null || b.reaction === "" || b.reaction === undefined ? null : String(b.reaction);
       if (!/^[a-z0-9]{6,20}$/.test(id) || !/^[a-f0-9]{32}$/.test(listener) || (reaction !== null && !REACTIONS.includes(reaction))) return json({ error: "Bad reaction" }, 400);
-      const idx = await load(), episode = idx.episodes.find(item => item.id === id);
+      const idx = await loadFast(), episode = idx.episodes.find(item => item.id === id);
       if (!episode || (episode.publishAt && Date.parse(episode.publishAt) > Date.now())) return json({ error: "Episode not found" }, 404);
       const visitor = createHash("sha256").update("reaction|" + listener).digest("hex").slice(0, 40), keyFor = r => `reactions/v/${id}/${r}/${visitor}`;
       await Promise.all(REACTIONS.filter(r => r !== reaction).map(r => store.delete(keyFor(r)).catch(() => {})));
       if (reaction) await store.setJSON(keyFor(reaction), { at: new Date().toISOString() });
       const totals = {};
       await Promise.all(REACTIONS.map(async r => { const { blobs } = await store.list({ prefix: `reactions/v/${id}/${r}/`, consistency: "strong" }); totals[r] = blobs.length; }));
-      await store.setJSON(`reactions/c/${id}.json`, totals);
+      await store.setJSON(`reactions/c/${id}.json`, totals); memo.list = null;
       return json({ ok: true, reactions: totals, selected: reaction });
     }
     if (b.action === "list-comments") {
       const id=String(b.id||"");
       if(!ID_RE.test(id))return json({error:"Episode not found"},404);
-      const idx=await load(),episode=idx.episodes.find(item=>item.id===id);
+      const idx=await loadFast(),episode=idx.episodes.find(item=>item.id===id);
       if(!episode||episode.publishAt&&Date.parse(episode.publishAt)>Date.now())return json({error:"Episode not found"},404);
       const {blobs}=await store.list({prefix:`comments/${id}/`,consistency:"strong"});
       const comments=await Promise.all(blobs.map(item=>store.get(item.key,{type:"json",consistency:"strong"})));
@@ -90,7 +131,7 @@ async function handle(context) {
       if(b.company)return json({error:"Couldn’t post comment."},400);
       if(!ID_RE.test(id)||!/^[a-f0-9]{32}$/.test(visitor)||!name||!text)return json({error:"Add your name and a comment first."},400);
       if(name.length>40||text.length>2000)return json({error:"Name or comment is too long."},400);
-      const idx=await load(),episode=idx.episodes.find(item=>item.id===id);
+      const idx=await loadFast(),episode=idx.episodes.find(item=>item.id===id);
       if(!episode||episode.publishAt&&Date.parse(episode.publishAt)>Date.now())return json({error:"Episode not found"},404);
       const visitorHash=createHash("sha256").update("comment|"+visitor).digest("hex"),rateKey=`comment-rates/${visitorHash}.json`;
       const previous=await store.get(rateKey,{type:"json",consistency:"strong"});
@@ -115,7 +156,11 @@ async function handle(context) {
     return json({ ok: true });
   }
 
-  if (b.action === "check") return json({ ok: true });
+  if (b.action === "check") { // also tidies old episodes once, so the public site stays fast
+    let migrated = false;
+    try { const idx = await load(); migrated = await migrateHeavy(idx); if (migrated) await saveIndex(idx); } catch (e) {}
+    return json({ ok: true, migrated });
+  }
 
   // ---- ideas board ----
   if (b.action === "list-ideas") return json({ ideas: (await readAll(store, "ideas/")).sort(newestFirst) });
@@ -412,57 +457,46 @@ async function handle(context) {
   if (b.action === "save-transcript-words") {
     const id = String(b.id || ""), episode = idx.episodes.find(item => item.id === id);
     if (!ID_RE.test(id) || !episode) return json({ error: "Episode not found" }, 404);
-    if (Array.isArray(episode.transcriptWords) && cleanWords(episode.transcriptWords).length) {
-      return json({ ok: true, unchanged: true, transcriptWords: episode.transcriptWords, transcript: episode.transcript || "" });
-    }
+    const current = await readHeavy(episode, store);
+    if (cleanWords(current.transcriptWords).length) return json({ ok: true, unchanged: true, transcriptWords: current.transcriptWords, transcript: current.transcript });
     const transcriptWords = cleanWords(b.words);
     if (!transcriptWords.length) return json({ error: "No usable timed words were provided." }, 400);
-    episode.transcriptWords = transcriptWords;
-    if (!episode.transcript && b.transcript) episode.transcript = clip(b.transcript, 200000);
-    await store.setJSON("episodes.json", idx);
-    return json({ ok: true, transcriptWords, transcript: episode.transcript || "" });
+    const transcript = current.transcript || clip(b.transcript, 200000);
+    await store.setJSON(heavyKey(id), { transcript, transcriptWords });
+    delete episode.transcript; delete episode.transcriptWords; episode.hasTranscript = !!transcript; episode.hasWords = true;
+    await saveIndex(idx);
+    return json({ ok: true, transcriptWords, transcript });
   }
 
   if (b.action === "analytics-summary") {
+    if (memo.analytics && !b.fresh && Date.now() - memo.analyticsAt < ANALYTICS_TTL) return json(memo.analytics);
     const published = new Map(idx.episodes
       .filter(episode => !episode.publishAt || Date.parse(episode.publishAt) <= Date.now())
       .map(episode => [episode.id, episode.title]));
     const listeners = new Set(), hourly = Array(24).fill(0), daily = [], episodePlays = new Map();
     const today = new Date();
-    for (let offset = 29; offset >= 0; offset--) {
-      const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - offset));
-      const day = date.toISOString().slice(0, 10);
-      const { blobs } = await store.list({ prefix: `analytics/listens/${day}/`, consistency: "strong" });
+    const days = Array.from({ length: 30 }, (_, i) => new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - (29 - i))).toISOString().slice(0, 10));
+    const lists = await Promise.all(days.map(day => fast.list({ prefix: `analytics/listens/${day}/` }).then(r => r.blobs))); // was 30 sequential round trips
+    days.forEach((day, i) => {
       let plays = 0;
-      for (const blob of blobs) {
+      for (const blob of lists[i]) {
         const match = blob.key.match(/^analytics\/listens\/\d{4}-\d{2}-\d{2}\/(\d{2})\/([a-f0-9]{64})\/([a-z0-9]{6,20})\.json$/);
         if (!match || !published.has(match[3])) continue;
         const hour = Number(match[1]);
         if (hour < 0 || hour > 23) continue;
-        listeners.add(match[2]);
-        hourly[hour]++;
-        plays++;
+        listeners.add(match[2]); hourly[hour]++; plays++;
         episodePlays.set(match[3], (episodePlays.get(match[3]) || 0) + 1);
       }
       daily.push({ date: day, plays });
-    }
-    const topHour = hourly.reduce((best, count, hour) => count > hourly[best] ? hour : best, 0);
-    const topEpisodes = [...episodePlays.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([id, plays]) => ({ id, title: published.get(id), plays }));
-    return json({
-      days: 30,
-      listeners: listeners.size,
-      plays: hourly.reduce((sum, count) => sum + count, 0),
-      hourly,
-      daily,
-      topHour: hourly[topHour] ? topHour : null,
-      topEpisodes
     });
+    const topHour = hourly.reduce((best, count, hour) => count > hourly[best] ? hour : best, 0);
+    const topEpisodes = [...episodePlays.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, plays]) => ({ id, title: published.get(id), plays }));
+    memo.analytics = { days: 30, listeners: listeners.size, plays: hourly.reduce((sum, count) => sum + count, 0), hourly, daily, topHour: hourly[topHour] ? topHour : null, topEpisodes };
+    memo.analyticsAt = Date.now();
+    return json(memo.analytics);
   }
 
-  if (b.action === "list-scheduled") return json({ episodes: idx.episodes.filter(e => e.publishAt && Date.parse(e.publishAt) > Date.now()).sort((a, b) => Date.parse(a.publishAt) - Date.parse(b.publishAt)) });
+  if (b.action === "list-scheduled") return json({ episodes: idx.episodes.filter(e => e.publishAt && Date.parse(e.publishAt) > Date.now()).sort((a, b) => Date.parse(a.publishAt) - Date.parse(b.publishAt)).map(lightEpisode) });
 
   if (b.action === "publish-now" || b.action === "set-schedule") {
     const id = String(b.id || ""), episode = idx.episodes.find(e => e.id === id);
@@ -473,8 +507,8 @@ async function handle(context) {
       if (!Number.isFinite(when) || when <= Date.now()) return json({ error: "Choose a future publish time." }, 400);
       episode.publishAt = new Date(when).toISOString();
     }
-    await store.setJSON("episodes.json", idx);
-    return json({ ok: true, episode });
+    await saveIndex(idx);
+    return json({ ok: true, episode: lightEpisode(episode) });
   }
 
   if (b.action === "publish") {
@@ -500,8 +534,10 @@ async function handle(context) {
       publishAt: requestedPublishAt ? new Date(publishTime).toISOString() : null,
       size, chunks, type: /^audio\/[\w.+-]+$/.test(e.type) ? e.type : "audio/webm",
     };
+    await store.setJSON(heavyKey(id), { transcript: rec.transcript, transcriptWords: rec.transcriptWords });
+    rec.hasTranscript = !!rec.transcript; rec.hasWords = rec.transcriptWords.length > 0; delete rec.transcript; delete rec.transcriptWords;
     idx.episodes.push(rec);
-    await store.setJSON("episodes.json", idx);
+    await saveIndex(idx);
     return json({ ok: true, episode: rec });
   }
 
@@ -509,13 +545,12 @@ async function handle(context) {
     const id = String(b.id || "");
     if (!idx.episodes.some(x => x.id === id)) return json({ error: "Not found" }, 404);
     idx.episodes = idx.episodes.filter(x => x.id !== id);
-    await store.setJSON("episodes.json", idx);
+    await saveIndex(idx);
     const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" });
-    for (const o of blobs) await store.delete(o.key);
-    try { // best effort: drop the episode's reactions too
+    await Promise.all(blobs.map(o => store.delete(o.key).catch(() => {})));
+    try { // best effort: drop the episode's reactions and transcript data too
       const { blobs: votes } = await store.list({ prefix: `reactions/v/${id}/`, consistency: "strong" });
-      for (const o of votes) await store.delete(o.key);
-      await store.delete(`reactions/c/${id}.json`);
+      await Promise.all([...votes.map(o => store.delete(o.key)), store.delete(`reactions/c/${id}.json`), store.delete(heavyKey(id))].map(p => Promise.resolve(p).catch(() => {})));
     } catch (e) {}
     return json({ ok: true });
   }

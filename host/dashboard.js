@@ -7,14 +7,14 @@ const day=d=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{mon
 const localDT=iso=>{const d=new Date(iso);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)};
 let pub=[],sch=[],drafts=[],comments=[],q="",analytics=null,analyticsError="",backfilling=false;
 const say=t=>$("dstatus").textContent=t;
-const hasTimedWords=e=>Array.isArray(e.transcriptWords)&&e.transcriptWords.some(word=>word&&String(word.word||"").trim()&&Number.isFinite(Number(word.start))&&Number.isFinite(Number(word.end))&&Number(word.start)>=0&&Number(word.end)>=Number(word.start));
+const hasTimedWords=e=>e.hasWords===true||Array.isArray(e.transcriptWords)&&e.transcriptWords.some(word=>word&&String(word.word||"").trim()&&Number.isFinite(Number(word.start))&&Number.isFinite(Number(word.end))&&Number(word.start)>=0&&Number(word.end)>=Number(word.start));
 function count(el,to){const t0=performance.now(),step=t=>{const p=Math.min(1,(t-t0)/700);el.textContent=Math.round(to*p);if(p<1)requestAnimationFrame(step)};requestAnimationFrame(step)}
 
 async function load(){
   say("Loading…");
   try{
     const [a,b,dr]=await Promise.all([
-      fetch("/api/episodes",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}),
+      fetch("/api/episodes").then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}),
       F.episodeScheduling===false?{episodes:[]}:api({action:"list-scheduled"}),
       F.episodeDrafts===false?[]:api({action:"list-drafts"}).then(d=>d.drafts||[]).catch(()=>[])]);
     pub=(a.episodes||[]).sort((x,y)=>y.num-x.num);sch=b.episodes||[];
@@ -122,7 +122,7 @@ function published(){
   list.forEach((e,i)=>box.append(h("article",{class:"item",style:"animation-delay:"+Math.min(i,8)*45+"ms"},
     h("span",{class:"n"},"EP "+e.num),
     h("div",null,h("h3",null,e.title),h("div",{class:"sub"},[e.unit,day(e.date),size(e.size)].filter(Boolean).join(" · ")),
-      h("div",{class:"tags"},e.transcript&&h("span",null,"transcript"),e.chapters&&e.chapters.length>0&&h("span",null,e.chapters.length+" chapters"),e.rant&&h("span",null,"\u{1F525}".repeat(Math.min(5,e.rant))))),
+      h("div",{class:"tags"},(e.hasTranscript||e.transcript)&&h("span",null,"transcript"),e.chapters&&e.chapters.length>0&&h("span",null,e.chapters.length+" chapters"),e.rant&&h("span",null,"\u{1F525}".repeat(Math.min(5,e.rant))))),
     F.episodeDeletion!==false?remove(e):h("span"))));
 }
 function renderComments(){
@@ -152,8 +152,7 @@ $("dbackfill").addEventListener("click",async()=>{
       const result=await api({action:"transcribe",id:episode.id,parts:episode.chunks,size:episode.size,type:episode.type});
       if(!Array.isArray(result.words)||!result.words.length)throw new Error("No timed words were returned.");
       const saved=await api({action:"save-transcript-words",id:episode.id,words:result.words,transcript:result.transcript});
-      episode.transcriptWords=saved.transcriptWords;
-      if(!episode.transcript&&saved.transcript)episode.transcript=saved.transcript;
+      episode.hasWords=true;episode.hasTranscript=!!saved.transcript||episode.hasTranscript;
       completed++;
     }catch(error){failures.push("EP "+episode.num+": "+error.message)}
   }

@@ -39,6 +39,7 @@ function header(){
 }
 function finish(){unlocked=true;$("gate").replaceChildren();header();$("app").hidden=false;cbs.splice(0).forEach(cb=>cb())}
 function askWho(){
+  if(window.AABoot)AABoot.done();
   $("gate").innerHTML=`<div class="gate"><div class="card"><h1>Who’s this?</h1><p class="mute">Your name shows on ideas, comments and drafts so the team knows who wrote what. Names aren’t verified, so don’t share the host password with anyone you don’t trust.</p>
 <label for="gname">Your name</label><input id="gname" maxlength="40" autocomplete="nickname">
 <div class="roles"><label><input type="radio" name="grole" value="Host" checked> Host</label><label><input type="radio" name="grole" value="Co-host"> Co-host</label></div>
@@ -58,6 +59,7 @@ async function tryPw(p){
   catch(e){pw="";try{sessionStorage.removeItem("hp_pw")}catch(x){}return e.message==="Wrong password"?"Wrong password.":"Couldn’t reach the API: "+e.message}
 }
 function showGate(note){
+  if(window.AABoot)AABoot.done();
   $("gate").innerHTML=`<div class="gate"><div class="card"><h1>Host access</h1><p class="mute">Enter the admin password to manage the show.</p>
 <label for="gpw">Admin password</label><div class="pwrow"><input id="gpw" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false"><button type="button" id="gshow">Show</button></div>
 <div class="acts"><button class="go" type="button" id="gunlock">Unlock</button><span id="gmsg" class="mute"></span></div></div></div>`;
@@ -70,7 +72,11 @@ function showGate(note){
 }
 async function start(){
   if(FEATURES.hostPanel===false){$("gate").innerHTML='<div class="gate"><div class="card"><h1>Host area is off</h1><p class="mute">Turn <b>hostPanel</b> back on in site-config.js.</p><a class="btn" href="/">Back to the site</a></div></div>';return}
-  if(pw){const err=await tryPw(pw);if(!err){open();return}showGate(err==="Wrong password."?"":err);return}
+  if(pw){ // this browser already unlocked once: open instantly and re-check the password quietly in the background
+    open();
+    tryPw(pw).then(err=>{if(err==="Wrong password.")location.reload()});
+    return;
+  }
   showGate();
 }
 start();

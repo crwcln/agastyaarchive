@@ -21,29 +21,32 @@
       <div class="st-vu"><i class="clip" id="stclip">CLIP</i><canvas id="stmeter" aria-label="Input level"></canvas><div class="st-scale"><span>-60</span><span>-40</span><span>-20</span><span>-6</span><span>0 dB</span></div></div>
     </div>
     <div class="st-wave"><canvas id="stwave" aria-label="Waveform"></canvas><div class="st-empty" id="stempty">Press the red button to record, or run a mic check to tune your filters first. Your voice shows up here live.</div></div>
+    <div class="ae" id="aeditor" hidden>
+      <div class="ae-top">
+        <button type="button" class="ae-play" id="aeplay" aria-label="Play or pause (Space)"><svg class="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><svg class="ic-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg></button>
+        <button type="button" id="aeplaysel" disabled>Play selection</button>
+        <button type="button" id="aepreview" disabled title="Hear 1.5 seconds either side of the cut, as if it were deleted">Preview cut</button>
+        <span class="ae-sel" id="aesel">No selection</span>
+        <span class="ae-zoom"><button type="button" id="aezout" aria-label="Zoom out">−</button><button type="button" id="aezfit" title="Fit everything, or zoom to the selection">Fit</button><button type="button" id="aezin" aria-label="Zoom in">+</button></span>
+      </div>
+      <div class="ae-view" id="aeview"><canvas id="aecanvas" tabindex="0" aria-label="Audio timeline: drag to select, click to move the playhead"></canvas><div class="ae-busy" id="aebusy" hidden><i></i><span id="aebusytext">Preparing the editor…</span></div></div>
+      <canvas id="aemini" aria-label="Overview of the whole recording"></canvas>
+      <div class="ae-tools">
+        <div class="ae-group"><span class="ae-label">Edit</span><button type="button" id="aedelete" disabled>Delete</button><button type="button" id="aecut" disabled>Cut</button><button type="button" id="aecopy" disabled>Copy</button><button type="button" id="aepaste" disabled>Paste</button><button type="button" id="aetrim" disabled>Keep only selection</button></div>
+        <div class="ae-group"><span class="ae-label">Record &amp; replace</span><button type="button" id="aerec">● Record at playhead</button><button type="button" id="aerecsel" disabled>● Replace selection</button><label class="ae-file" id="aefilelab" title="Insert another audio file at the playhead">Insert file<input type="file" id="aefile" accept="audio/*" hidden></label><label class="ae-file disabled" id="aefilesellab" title="Replace the selection with another audio file">Replace with file<input type="file" id="aefilesel" accept="audio/*" hidden disabled></label><label class="ae-check"><input type="checkbox" id="aepre"> Play a 2 s lead-in first (use headphones)</label></div>
+        <div class="ae-group"><span class="ae-label">Fix</span><button type="button" id="aesilence" disabled>Mute</button><button type="button" id="aeinsil">Add silence…</button><button type="button" id="aefadein" disabled>Fade in</button><button type="button" id="aefadeout" disabled>Fade out</button><button type="button" id="aegain">Volume…</button><button type="button" id="aenorm">Normalize</button><button type="button" id="aepauses">Tighten pauses…</button></div>
+        <div class="ae-group"><span class="ae-label">History</span><button type="button" id="aeundo" disabled>Undo</button><button type="button" id="aeredo" disabled>Redo</button><button type="button" id="aerevert" disabled>Revert all</button><button type="button" id="stredo">Discard &amp; re-record</button></div>
+      </div>
+      <div class="ae-params" id="aeparams" hidden></div>
+      <div class="ae-recbar" id="aerecbar" hidden><span class="ae-dot"></span><b id="aerectime">0:00.0</b><span id="aerectext">Recording…</span><button type="button" class="go" id="aerecstop">Stop &amp; keep</button><button type="button" id="aereccancel">Cancel</button></div>
+      <div class="ae-foot"><span class="fine" id="aestatus">Drag to select, click to move the playhead, Space plays, Delete removes the selection, Ctrl+Z undoes.</span><button type="button" id="aeapply" disabled>Render edits now</button></div>
+    </div>
     <div class="st-transport">
       <button type="button" class="tbtn" id="stcheck"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg><span>Mic check</span></button>
       <button type="button" class="tbtn" id="stmark" disabled title="Drop a chapter marker (M)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18h2v-7h9l-2-4 2-4H8V3z"/></svg><span>Marker</span></button>
       <button type="button" class="recbtn" id="hpstart" aria-label="Start recording" title="Record"><i></i></button>
       <button type="button" class="tbtn" id="hppause" disabled title="Pause (Space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg><span>Pause</span></button>
       <label class="tbtn" title="Import an audio file" style="cursor:pointer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5zm7-16-5 5h3.5v6h3V9H17z"/></svg><span>Import</span><input type="file" id="hpfile" accept="audio/*" hidden></label>
-    </div>
-    <div class="st-review" id="streview" hidden>
-      <button type="button" class="playbtn" id="stplay" aria-label="Play or pause"><svg class="ic-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><svg class="ic-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg></button>
-      <span>Drag across the waveform to select audio, or click to seek. Press <b>M</b> to drop a chapter marker at the playhead.</span>
-      <button type="button" id="stredo">Re-record</button>
-    </div>
-    <div class="st-editor" id="steditor" hidden>
-      <div class="st-selection"><b>Selection</b><span id="stselection">None</span></div>
-      <div class="st-edit-actions">
-        <button type="button" id="stcut" disabled>Cut selection</button>
-        <button type="button" id="sttrim" disabled>Keep selection</button>
-        <label class="st-edit-file" id="streplaceLabel" title="Replace the selected audio with another audio file">Replace with audio file<input type="file" id="streplacefile" accept="audio/*" hidden disabled></label>
-        <button type="button" id="stundo" disabled>Undo edit</button>
-        <button type="button" id="stredoedit" disabled>Redo edit</button>
-        <button type="button" id="stclear" disabled>Clear selection</button>
-      </div>
-      <p class="fine">Edits are applied to a working copy. Undo is available until you leave this recording.</p>
     </div>
     <audio id="hpprev" preload="metadata" hidden></audio>
   </section>

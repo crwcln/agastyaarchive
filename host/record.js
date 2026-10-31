@@ -18,7 +18,7 @@ $("hpdate").value=new Date().toISOString().slice(0,10);
 const recordParams=new URLSearchParams(location.hash.includes("?")?location.hash.slice(location.hash.indexOf("?")+1):location.search.slice(1));
 if(recordParams.has("title"))$("hptitle").value=recordParams.get("title").slice(0,200);
 if(UNITS.includes(recordParams.get("unit")))$("hpunit").value=recordParams.get("unit");
-let pw=HOST.pw(),stream,rec,chunks=[],blob=null,transcriptWords=[],uploadId=null,uploadedBlob=null,uploadedParts=0,savedAudioId=null,draftId=null,t0=0,acc=0,tick=null;
+let pw=HOST.pw(),stream,rec,chunks=[],blob=null,transcriptWords=[],uploadId=null,uploadedBlob=null,uploadedParts=0,savedAudioId=null,draftId=null,audioEdited=false,t0=0,acc=0,tick=null;
 const msg=t=>{$("hpmsg").textContent=t;if(/failed|couldn.t|error/i.test(t))HOST.notify(t,"error")};
 const fmtT=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 const elapsed=()=>acc+(rec&&rec.state==="recording"?(Date.now()-t0)/1000:0);
@@ -46,7 +46,7 @@ async function maybeGenerateChapters(){
   const bucketSeconds=15,groups=new Map();
   for(const word of transcriptWords){const time=Number(word.start),text=String(word.word||"").trim();if(!Number.isFinite(time)||!text)continue;const start=Math.floor(time/bucketSeconds)*bucketSeconds;if(!groups.has(start))groups.set(start,[]);groups.get(start).push(text)}
   const segments=[...groups].sort((a,b)=>a[0]-b[0]).map(([time,words])=>({time,text:words.join(" ")}));
-  const duration=Number.isFinite($("hpprev").duration)&&$("hpprev").duration>0?$("hpprev").duration:Math.max(...transcriptWords.map(word=>Number(word.end)||0));
+  const duration=editor.hasAudio()?editor.duration():Number.isFinite($("hpprev").duration)&&$("hpprev").duration>0?$("hpprev").duration:Math.max(...transcriptWords.map(word=>Number(word.end)||0));
   if(!segments.length||!duration){status.textContent="No timed transcript available for chapter generation.";return}
   status.textContent="Generating episode chapters with Gemini...";delete status.dataset.error;
   try{
@@ -65,7 +65,27 @@ async function maybeGenerateChapters(){
     status.textContent=result.chapters&&result.chapters.length?result.chapters.length+" chapters ready. Review or edit them before publishing.":"No chapters were returned.";
   }catch(e){status.textContent="Chapter generation failed: "+e.message;status.dataset.error="true"}
 }
+async function applyEdits(){ // turn the editor's edit list into a real file before anything is uploaded
+  if(!editor.isDirty())return;
+  msg("Rendering your edits…");
+  const out=await editor.apply(p=>{$("hpprog").value=Math.round(p*100)});
+  discardTemporaryUpload();uploadId=null;uploadedBlob=null;uploadedParts=0;blob=out;$("hpprev").src=URL.createObjectURL(out);
+  msg("Edits rendered ("+(out.size/1048576).toFixed(1)+" MB).");
+}
+function audioChanged(op){ // keep chapters lined up with the edited audio; word timings no longer match, so they are cleared
+  audioEdited=true;transcriptWords=[];
+  const list=parseChapterLines();
+  if(list.length&&op){
+    const moved=list.map(c=>{let t=c.time;
+      if(op.type==="delete"){if(t>=op.at+op.len)t-=op.len;else if(t>op.at)t=op.at}
+      else if(op.type==="insert"&&t>op.at)t+=op.len;
+      return{time:Math.max(0,t),title:c.title}}).sort((a,b)=>a.time-b.time);
+    $("hpchapters").value=moved.map(c=>chapterClock(c.time)+" "+c.title).join("\n");
+  }
+  if($("hptr").value.trim())$("hptranscribeStatus").textContent="The audio was edited. Transcribe again to refresh the transcript.";
+}
 async function ensureUploaded(){
+  await applyEdits();
   if(uploadId&&uploadedBlob===blob)return {id:uploadId,parts:uploadedParts};
   const parts=Math.ceil(blob.size/CHUNK),started=await api({action:"upload-start",parts});
   for(let i=0;i<parts;i++){
@@ -77,13 +97,21 @@ async function ensureUploaded(){
   return {id:uploadId,parts:uploadedParts};
 }
 function discardTemporaryUpload(){if(uploadId&&uploadId!==savedAudioId)api({action:"discard-upload",id:uploadId}).catch(()=>{})}
-function setAudio(b){transcriptWords=[];$("hpchapters").value="";$("hpchapterStatus").textContent="";discardTemporaryUpload();uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);msg((b.size<1048576?Math.max(1,Math.round(b.size/1024))+" KB":(b.size/1048576).toFixed(1)+" MB")+" ready.")}
+function setAudio(b){audioEdited=false;transcriptWords=[];$("hpchapters").value="";$("hpchapterStatus").textContent="";discardTemporaryUpload();uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);msg((b.size<1048576?Math.max(1,Math.round(b.size/1024))+" KB":(b.size/1048576).toFixed(1)+" MB")+" ready.")}
 function clearAudio(){
   discardTemporaryUpload();
   uploadId=null;uploadedBlob=null;uploadedParts=0;blob=null;transcriptWords=[];
   $("hptr").value="";$("hpchapters").value="";$("hpchapterStatus").textContent="";$("hpprev").removeAttribute("src");msg("");
 }
+const editor=AudioEditor.create({
+  confirm:HOST.confirm,notify:HOST.notify,
+  recordClip:()=>studio.recordClip(),
+  getChapters:()=>$("hpchapters").value,setChapters:v=>{$("hpchapters").value=v},
+  onEdit:audioChanged
+});
+window.AAeditor=editor; // handy for debugging in the browser console
 const studio=Studio.create({
+  editor,
   markers:FEATURES.autoChapters===true,
   hasAudio:()=>!!blob,
   getAudio:()=>blob,
@@ -240,7 +268,7 @@ msg("Preparing upload…");
       msg("Generating word timings for transcript highlighting…");
       const transcriptResult=await api({action:"transcribe",id,parts,size:blob.size,type:blob.type});
       transcriptWords=Array.isArray(transcriptResult.words)?transcriptResult.words:[];
-      if(!$("hptr").value.trim())$("hptr").value=transcriptResult.transcript||"";
+      if(!$("hptr").value.trim()||audioEdited)$("hptr").value=transcriptResult.transcript||"";
       if(!transcriptWords.length)throw new Error("No word timings were returned. Try transcribing the audio again before publishing.");
     }
     if(FEATURES.autoChapters===true&&$("hpautoChapters").checked&&!parseChapterLines().length){

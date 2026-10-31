@@ -6,7 +6,27 @@
 <title>The Agastya Archive</title>
 <script src="site-config.js"></script>
 <link rel="icon" type="image/svg+xml" href="logo.svg">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap"><noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap"></noscript>
+<style id="boot-css">
+#boot{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:#f4ecdc;color:#2a1f16;opacity:0;animation:bootIn .35s .2s forwards}
+@media (prefers-color-scheme:dark){#boot{background:#14100d;color:#f1e7d3}}
+#boot.out{animation:bootOut .45s forwards;pointer-events:none}
+.boot-card{display:grid;justify-items:center;gap:14px;padding:24px;text-align:center}
+.boot-logo{width:116px;height:116px;overflow:visible;filter:drop-shadow(0 10px 26px rgba(184,74,23,.35))}
+.boot-logo .orbit{transform-box:view-box;transform-origin:64px 64px;animation:bootSpin 2.6s linear infinite}
+.boot-logo .pop{transform-box:fill-box;transform-origin:center;animation:bootPop .8s cubic-bezier(.2,1.3,.4,1) both}
+.boot-logo .p2{animation-delay:.12s}.boot-logo .p3{animation-delay:.24s}
+.boot-title{font:900 23px/1.1 'Playfair Display',Georgia,serif}
+.boot-bar{width:190px;height:4px;border-radius:99px;overflow:hidden;background:rgba(127,127,127,.25)}
+.boot-bar i{display:block;width:40%;height:100%;border-radius:99px;background:linear-gradient(90deg,#b84a17,#e0b04a);animation:bootBar 1.25s ease-in-out infinite}
+.boot-text{font:500 13px 'Space Grotesk',system-ui,sans-serif;letter-spacing:.05em;opacity:.7}
+body.booting{overflow:hidden}
+@keyframes bootIn{to{opacity:1}}@keyframes bootOut{from{opacity:1}to{opacity:0}}
+@keyframes bootSpin{to{transform:rotate(360deg)}}@keyframes bootBar{from{transform:translateX(-110%)}to{transform:translateX(260%)}}
+@keyframes bootPop{from{opacity:0;transform:scale(.55)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.boot-logo .orbit,.boot-bar i{animation:none}.boot-bar i{width:100%}}
+</style>
 <style>
 :root{--bg:#f4ecdc;--surface:#fbf6ea;--ink:#2a1f16;--mute:#6f5e49;--accent:#b84a17;--gold:#9a6f12;--line:#d9c9a8;--btn:#fff;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
@@ -95,7 +115,7 @@ nav{animation:rise .7s both}
 .stamp{animation:slam .7s .3s cubic-bezier(.2,.9,.3,1.2) both}
 .hero h1 .w{display:inline-block;animation:rise .8s both}
 .hero h1 .w:nth-child(1){animation-delay:.45s}.hero h1 .w:nth-child(2){animation-delay:.6s}
-.hero h1 em.w{animation:rise .8s .75s both,shimmer 5s linear infinite;background:linear-gradient(90deg,var(--accent),var(--gold),var(--accent));background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;padding-left:.12em;margin-left:-.12em;padding-right:.08em}
+.hero h1 em.w{animation:rise .8s .75s both,shimmer 5s linear infinite;background:linear-gradient(90deg,var(--accent),var(--gold),var(--accent));background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;padding-right:.08em}
 .hero p{animation:rise .8s .95s both}
 .logo{width:104px;height:104px;display:block;margin-bottom:14px;overflow:visible;animation:rise .8s .1s both;filter:drop-shadow(0 5px 8px color-mix(in srgb,var(--ink) 16%,transparent))}
 .fx .rv{opacity:0;transform:translateY(26px);transition:opacity .7s,transform .7s}
@@ -123,7 +143,17 @@ nav{animation:rise .7s both}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 </style>
 </head>
-<body>
+<body class="booting">
+<div id="boot" role="status" aria-live="polite" aria-label="Loading"><div class="boot-card">
+<svg class="boot-logo" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="bpaper" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f8edda"/><stop offset="1" stop-color="#dfc99e"/></linearGradient><linearGradient id="bink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d47736"/><stop offset="1" stop-color="#8f321b"/></linearGradient></defs>
+<circle cx="64" cy="64" r="60" fill="#211710"/><circle cx="64" cy="64" r="53" fill="url(#bpaper)" stroke="#bb762c" stroke-width="2"/>
+<g class="orbit"><circle cx="64" cy="64" r="58" fill="none" stroke="#e0b04a" stroke-width="3" stroke-linecap="round" stroke-dasharray="60 305"/></g>
+<path class="pop" d="M25 92V38q19-7 39 5 20-12 39-5v54q-19-7-39 5-20-12-39-5Z" fill="#fbf5e9" stroke="#57321d" stroke-linejoin="round" stroke-width="3"/>
+<path class="pop p2" d="M64 44v52M33 49q13-3 24 3M33 60q13-3 24 3M33 71q13-3 24 3M71 52q11-6 24-3M71 63q11-6 24-3M71 74q11-6 24-3" fill="none" stroke="#b89971" stroke-linecap="round" stroke-width="2"/>
+<path class="pop p3" d="m47 86 17-44 17 44h-9l-8-22-8 22Z" fill="url(#bink)" stroke="#5b2819" stroke-linejoin="round" stroke-width="2"/><path class="pop p3" d="M55 72h18" stroke="#f8edda" stroke-linecap="round" stroke-width="3"/></svg>
+<div class="boot-title">The Agastya Archive</div><div class="boot-bar"><i></i></div><div class="boot-text">Opening the archive…</div></div></div>
+<noscript><style>#boot{display:none}body.booting{overflow:auto}</style></noscript>
+<script src="/boot.js"></script>
 <div class="wrap">
   <nav><span><b>◆</b> Est. AP World History</span><span>New rants regularly</span></nav>
 
@@ -307,22 +337,45 @@ function noticeUpdates(items){
     if(FEATURES.updateNotices!==false&&messages.length){updateMessage.textContent=messages.join(" ");updateBanner.hidden=false}
   }catch(e){}
 }
+const EP_CACHE="aa_eps_v2";
+const lightOf=e=>{const {transcript,transcriptWords,reacting,...rest}=e;return rest};
+function readEpisodeCache(){try{const c=JSON.parse(localStorage.getItem(EP_CACHE)||"null");return c&&Array.isArray(c.eps)?c.eps:null}catch(e){return null}}
+function writeEpisodeCache(list){try{localStorage.setItem(EP_CACHE,JSON.stringify({t:Date.now(),eps:list.map(lightOf)}))}catch(e){}}
+function mergeHeavy(next){next.forEach(n=>{const old=eps.find(e=>e.id===n.id);if(old&&old.transcript){n.transcript=old.transcript;n.transcriptWords=old.transcriptWords}});return next}
+const isPlaying=()=>[...document.querySelectorAll("#list audio")].some(a=>!a.paused&&!a.ended);
+async function fetchEpisodes(){
+  const r=await fetch("/api/episodes"),t=await r.text();let d;try{d=JSON.parse(t)}catch(x){}
+  if(!r.ok||!d)throw new Error(d&&d.error?d.error:"HTTP "+r.status+(r.ok?", not JSON":""));
+  return(d.episodes||[]).sort((a,b)=>b.num-a.num);
+}
 async function load(){
-  try{const r=await fetch("/api/episodes"),t=await r.text();let d;try{d=JSON.parse(t)}catch(x){}
-    if(!r.ok||!d)throw new Error(d&&d.error?d.error:"HTTP "+r.status+(r.ok?", not JSON":""));
-    eps=(d.episodes||[]).sort((a,b)=>b.num-a.num);initialEpisodesLoaded=true;noticeUpdates(eps);err=""}
-  catch(e){err="Couldn\u2019t load episodes: "+e.message+". (Running locally? Use \u201cedgeone pages dev\u201d.)"}
-  render();
+  // Repeat visits paint instantly from the last list this browser saw, then quietly refresh it.
+  const cached=readEpisodeCache(),hadCache=!!(cached&&cached.length);
+  if(hadCache){eps=cached.sort((a,b)=>b.num-a.num);err="";render();if(window.AABoot)AABoot.done()}
+  let needRender=!hadCache;
+  try{
+    const next=await fetchEpisodes();
+    if(hadCache){
+      if(JSON.stringify(next.map(lightOf))!==JSON.stringify(eps.map(lightOf))){
+        if(isPlaying()){pendingEpisodeRefresh=true;updateMessage.textContent="The episode list has changed. It will refresh when playback ends.";updateBanner.hidden=false}
+        else{eps=mergeHeavy(next);needRender=true}
+      }
+    }else eps=next;
+    initialEpisodesLoaded=true;noticeUpdates(next);err="";writeEpisodeCache(next);
+  }catch(e){if(!hadCache)err="Couldn\u2019t load episodes: "+e.message+". (Running locally? Use \u201cedgeone pages dev\u201d.)";needRender=!hadCache}
+  if(needRender)render();
+  if(window.AABoot)AABoot.done();
   if(initialEpisodesLoaded)syncStoredReactions();
 }
 async function refreshPublishedEpisodes(){
   if(!initialEpisodesLoaded||episodeRefreshBusy||document.hidden)return;
   episodeRefreshBusy=true;
   try{
-    const response=await fetch("/api/episodes?live-check="+Date.now(),{cache:"no-store"}),data=await response.json();
+    const response=await fetch("/api/episodes"),data=await response.json(); // revalidated with an ETag, so unchanged lists cost almost nothing
     if(!response.ok||!Array.isArray(data.episodes))return;
     const next=data.episodes.sort((a,b)=>b.num-a.num),currentIds=eps.map(e=>e.id).join("|"),nextIds=next.map(e=>e.id).join("|");
     next.forEach(n=>{const cur=eps.find(e=>e.id===n.id);if(cur&&!cur.reacting&&n.reactions&&JSON.stringify(cur.reactions)!==JSON.stringify(n.reactions)){cur.reactions=n.reactions;refreshReactionView(cur)}});
+    writeEpisodeCache(next);
     if(currentIds===nextIds)return;
     const playing=[...document.querySelectorAll("#list audio")].some(audio=>!audio.paused&&!audio.ended);
     if(playing){pendingEpisodeRefresh=true;updateMessage.textContent="A new episode is available. The episode list will update when playback ends.";updateBanner.hidden=false;return}
@@ -333,6 +386,8 @@ async function refreshPublishedEpisodes(){
 document.addEventListener("play",event=>{
   const audio=event.target,episode=audio.closest&&audio.closest(".ep");
   if(!episode||!episode.dataset.episodeId)return;
+  const ep=eps.find(e=>e.id===episode.dataset.episodeId);
+  if(ep&&ep.hasTranscript&&!ep.transcript)loadEpisodeDetail(ep).then(()=>{const d=episode.querySelector("details.transcript");if(d&&d._fill&&!d.querySelector(".transcript-word")&&ep.transcript)d._fill()}).catch(()=>{});
   const listener=getAnalyticsListener();
   fetch("/api/episodes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"record-listen",id:episode.dataset.episodeId,listener,localHour:new Date().getHours()})})
     .then(response=>{if(!response.ok)console.warn("Could not record listening analytics (HTTP "+response.status+").")})
@@ -398,7 +453,7 @@ function commentsView(episode){
 function bindTranscriptHighlight(audio){
   let elements=null,active=null;
   const highlight=()=>{
-    if(elements===null){const article=audio.closest("article");if(!article)return;elements=[...article.querySelectorAll(".transcript-word")]}
+    if(elements===null||!elements.length){const article=audio.closest("article");if(!article)return;elements=[...article.querySelectorAll(".transcript-word")]}
     const time=audio.currentTime;let low=0,high=elements.length-1,found=null;
     while(low<=high){const mid=(low+high)>>1,word=elements[mid],start=Number(word.dataset.start),end=Number(word.dataset.end);if(time<start)high=mid-1;else if(time>=end)low=mid+1;else{found=word;break}}
     if(found===active)return;
@@ -457,18 +512,40 @@ function chapterView(episode){
   });
   return h("details",{class:"chapters"},h("summary",null,"Chapters ("+chapters.length+")"),h("ol",{class:"chapter-list"},...items));
 }
+const detailLoads=new Map();
+function loadEpisodeDetail(episode){ // transcripts are big, so the list omits them and each one loads on demand
+  if(episode.transcript||!episode.hasTranscript)return Promise.resolve(episode);
+  if(detailLoads.has(episode.id))return detailLoads.get(episode.id);
+  const p=fetch("/api/episodes?id="+encodeURIComponent(episode.id)).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}).then(d=>{episode.transcript=d.transcript||"";episode.transcriptWords=Array.isArray(d.transcriptWords)?d.transcriptWords:[];return episode}).finally(()=>detailLoads.delete(episode.id));
+  detailLoads.set(episode.id,p);return p;
+}
 function transcriptView(episode){
-  if(FEATURES.transcript===false||!episode.transcript)return null;
-  const timed=(Array.isArray(episode.transcriptWords)?episode.transcriptWords:[]).filter(word=>word&&String(word.word||"").trim()&&Number.isFinite(Number(word.start))&&Number.isFinite(Number(word.end))&&Number(word.start)>=0&&Number(word.end)>=Number(word.start));
-  let paragraphs;
-  if(timed.length){
-    paragraphs=[];
-    for(let i=0;i<timed.length;i+=36){
-      const spans=timed.slice(i,i+36).map(word=>h("span",{class:"transcript-word","data-start":Number(word.start),"data-end":Number(word.end),onclick:event=>{const audio=event.currentTarget.closest("article")?.querySelector("audio");if(audio){audio.currentTime=Number(word.start);audio.play().catch(()=>{})}}},String(word.word).trim()+" "));
-      paragraphs.push(h("p",null,...spans));
-    }
-  }else paragraphs=transcriptParagraphs(episode.transcript).map(paragraph=>h("p",null,paragraph));
-  return h("details",{class:"transcript"},h("summary",null,timed.length?"Follow along with transcript":"Read transcript"),h("div",{class:"transcript-text"},...paragraphs));
+  if(FEATURES.transcript===false||!(episode.transcript||episode.hasTranscript))return null;
+  const body=h("div",{class:"transcript-text"}),timedWords=()=>(Array.isArray(episode.transcriptWords)?episode.transcriptWords:[]).filter(word=>word&&String(word.word||"").trim()&&Number.isFinite(Number(word.start))&&Number.isFinite(Number(word.end))&&Number(word.start)>=0&&Number(word.end)>=Number(word.start));
+  const summary=h("summary",null,episode.hasWords?"Follow along with transcript":"Read transcript"),details=h("details",{class:"transcript"},summary,body);
+  const fill=()=>{
+    const timed=timedWords();let paragraphs;body.replaceChildren();
+    if(timed.length){
+      paragraphs=[];
+      for(let i=0;i<timed.length;i+=36){
+        const spans=timed.slice(i,i+36).map(word=>h("span",{class:"transcript-word","data-start":Number(word.start),"data-end":Number(word.end),onclick:event=>{const audio=event.currentTarget.closest("article")?.querySelector("audio");if(audio){audio.currentTime=Number(word.start);audio.play().catch(()=>{})}}},String(word.word).trim()+" "));
+        paragraphs.push(h("p",null,...spans));
+      }
+    }else paragraphs=transcriptParagraphs(episode.transcript).map(paragraph=>h("p",null,paragraph));
+    body.append(...paragraphs);summary.textContent=timed.length?"Follow along with transcript":"Read transcript";
+  };
+  details._fill=fill;
+  if(episode.transcript)fill();
+  else{
+    let busy=false;
+    details.addEventListener("toggle",async()=>{
+      if(busy||!details.open||episode.transcript)return;
+      busy=true;body.textContent="Loading transcript…";
+      try{await loadEpisodeDetail(episode);fill()}catch(e){body.textContent="Couldn’t load the transcript. Close and reopen this section to try again."}
+      busy=false;
+    });
+  }
+  return details;
 }
 function render(){
   const units=["All",...new Set(eps.map(e=>e.unit).filter(Boolean))];

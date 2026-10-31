@@ -2,7 +2,7 @@
 HOST.ready(()=>{
   const names=HOST.features.hostIdeas===false?["dashboard","record"]:["dashboard","record","ideas"],$=id=>document.getElementById(id),panels=Object.fromEntries(["dashboard","record","ideas"].map(name=>[name,$("workspace-"+name)]));
   const sources={dashboard:"/host/dashboard-view.html",record:"/host/record.html",ideas:"/host/ideas.html"};
-  const scripts={dashboard:["/host/dashboard.js"],record:["/host/studio.js","/host/record.js"],ideas:["/host/tts.js","/host/ideas.js"]};
+  const scripts={dashboard:["/host/dashboard.js"],record:["/host/studio.js","/host/editor.js","/host/record.js"],ideas:["/host/tts.js","/host/ideas.js"]};
   const loadedScripts=new Set(),pendingScripts=new Map();let active="dashboard",touchX=null;
   document.querySelector('[data-view="ideas"]').hidden=HOST.features.hostIdeas===false;
   $("workspace-ideas").hidden=HOST.features.hostIdeas===false;
@@ -20,7 +20,7 @@ HOST.ready(()=>{
     if(loadedScripts.has(src))return Promise.resolve();
     if(pendingScripts.has(src))return pendingScripts.get(src);
     const promise=new Promise((resolve,reject)=>{
-      const script=document.createElement("script");script.src=src;script.onload=()=>{loadedScripts.add(src);resolve()};script.onerror=()=>reject(new Error("Couldn’t load "+src));
+      const script=document.createElement("script");script.src=src;script.async=false;script.onload=()=>{loadedScripts.add(src);resolve()};script.onerror=()=>reject(new Error("Couldn’t load "+src));
       document.body.append(script);
     }).finally(()=>pendingScripts.delete(src));
     pendingScripts.set(src,promise);return promise;
@@ -41,14 +41,20 @@ HOST.ready(()=>{
         }
         panel.dataset.loaded="true";
         document.body.dataset.page=name;
-        for(const src of scripts[name])await loadScript(src);
+        await Promise.all(scripts[name].map(loadScript)); // parallel download, ordered execution
       }catch(error){delete panel.dataset.loaded;const notice=document.createElement("div");notice.className="empty";notice.textContent="Couldn’t open "+name+". "+error.message+" ";const retry=document.createElement("button");retry.type="button";retry.textContent="Try again";retry.onclick=()=>loadView(name,query);notice.append(retry);panel.replaceChildren(notice)}
-      finally{$("workspaceLoading").hidden=true}
+      finally{$("workspaceLoading").hidden=true;if(window.AABoot)AABoot.done();warmUp()}
     }
     active=name;document.body.dataset.page=name;setTabs(name);
     const index=names.indexOf(name);$("workspaceTrack").style.transform="translateX(-"+(index*100/names.length)+"%)";
     names.forEach(view=>panels[view].setAttribute("aria-hidden",String(view!==name)));
     if(alreadyLoaded)window.dispatchEvent(new CustomEvent("host-route-query",{detail:{view:name,query}}));
+  }
+  let warmed=false;
+  function warmUp(){ // once the first view is up, quietly fetch the other tabs so switching feels instant
+    if(warmed)return;warmed=true;
+    const go=()=>names.filter(n=>!panels[n].dataset.loaded).forEach(n=>{[sources[n],...scripts[n]].forEach(url=>fetch(url,{cache:"force-cache"}).catch(()=>{}))});
+    (window.requestIdleCallback||setTimeout)(go,{timeout:2500});
   }
   function route(){const target=parseRoute();loadView(target.name,target.query)}
   function goto(name,query=""){
