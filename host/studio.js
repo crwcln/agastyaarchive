@@ -62,6 +62,7 @@ function create(opts){
     for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3)}return b}
   async function openMic(){
     if(open)return;
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error("Microphone access isn’t available here. Open the site over HTTPS in a browser that allows microphone access.");
     stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:ec,noiseSuppression:ns,autoGainControl:false,...(devId?{deviceId:{exact:devId}}:{})}});
     const AC=window.AudioContext||window.webkitAudioContext;ctx=new AC();if(ctx.resume)await ctx.resume();
     const bq=o=>{const f=ctx.createBiquadFilter();f.type=o.type;if(o.frequency!=null)f.frequency.value=o.frequency;if(o.Q!=null)f.Q.value=o.Q;return f},n=nodes={};
@@ -167,6 +168,7 @@ function create(opts){
   /* ---------- recording ---------- */
   async function start(){
     if(recording||clip)return;
+    if(!window.MediaRecorder){opts.onMessage&&opts.onMessage("This browser can’t record audio. Import an audio file instead.");return}
     if(mode==="review"&&opts.hasAudio&&opts.hasAudio()&&!(await (opts.confirm?opts.confirm("Replace the current audio? This can’t be undone.","Replace recording"):Promise.resolve(window.confirm("Replace the current audio? This can’t be undone.")))))return;
     audio.pause();
     try{await openMic()}catch(e){opts.onMessage&&opts.onMessage("Mic blocked or unavailable: "+e.message);return}
@@ -248,6 +250,7 @@ function create(opts){
   /* ---------- punch-in: record a short clip through the same filters, for the editor ---------- */
   async function recordClip(){
     if(recording||clip)throw new Error("Already recording.");
+    if(!window.MediaRecorder)throw new Error("This browser can’t record audio.");
     const wasOpen=open;
     await openMic();
     const mt=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||"",

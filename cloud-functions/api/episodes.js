@@ -229,6 +229,7 @@ async function handle(context) {
     const draft = { id, title: clip(e.title, 200).trim(), unit: clip(e.unit, 80), date: /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : "",
       rant: Math.min(5, Math.max(1, +e.rant || 3)), desc: clip(e.desc, 5000), script: clip(e.script, 200000), notes: clip(e.notes, 20000), transcript: clip(e.transcript, 200000),
       transcriptWords: cleanWords(e.transcriptWords), chapters: clip(e.chapters, 5000), whenLocal: clip(e.whenLocal, 20),
+      mode: e.mode === "plain" ? "plain" : "ai",
       ideaId: ID_RE.test(String(e.ideaId || "")) ? String(e.ideaId) : (old && old.ideaId) || null, audio,
       author: old ? old.author : by, createdAt: old ? old.createdAt : now, updatedAt: now, updatedBy: by };
     await store.setJSON(key, draft);

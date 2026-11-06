@@ -19,6 +19,16 @@ const recordParams=new URLSearchParams(location.hash.includes("?")?location.hash
 if(recordParams.has("title"))$("hptitle").value=recordParams.get("title").slice(0,200);
 if(UNITS.includes(recordParams.get("unit")))$("hpunit").value=recordParams.get("unit");
 let pw=HOST.pw(),stream,rec,chunks=[],blob=null,transcriptWords=[],uploadId=null,uploadedBlob=null,uploadedParts=0,savedAudioId=null,draftId=null,audioEdited=false,t0=0,acc=0,tick=null;
+const noAI=()=>$("hpmode").value==="plain";
+let autoChaptersChoice=$("hpautoChapters").checked;
+function syncMode(){
+  const skip=noAI(),auto=$("hpautoChapters"),label=auto&&auto.parentElement;
+  if(skip){autoChaptersChoice=auto.checked;auto.checked=false}else auto.checked=autoChaptersChoice;
+  auto.disabled=skip;if(label)label.classList.toggle("disabled",skip);
+  $("hptranscribe").hidden=skip||FEATURES.transcribeAudio!==true;
+  $("hpmodeNote").textContent=skip?"AI is off. The audio uploads exactly as it is; paste a transcript or type chapters yourself if you want them.":"";
+}
+$("hpmode").onchange=syncMode;syncMode();
 const msg=t=>{$("hpmsg").textContent=t;if(/failed|couldn.t|error/i.test(t))HOST.notify(t,"error")};
 const fmtT=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 const elapsed=()=>acc+(rec&&rec.state==="recording"?(Date.now()-t0)/1000:0);
@@ -142,7 +152,7 @@ $("hpsavedraft").onclick=async()=>{
     const saved=await api({action:"save-draft",by:HOST.who(),draft:{
       id:draftId||undefined,title:$("hptitle").value,unit:$("hpunit").value,date:$("hpdate").value,rant:+$("hprant").value,
       desc:$("hpdesc").value,script:$("hpscript").value,transcript:$("hptr").value,transcriptWords,
-      chapters:$("hpchapters").value,whenLocal:$("hpwhen").value,ideaId:new URLSearchParams(location.search).get("idea"),audio
+      chapters:$("hpchapters").value,whenLocal:$("hpwhen").value,mode:$("hpmode").value,ideaId:new URLSearchParams(location.search).get("idea"),audio
     }});
     draftId=saved.draft.id;savedAudioId=saved.draft.audio&&saved.draft.audio.id||null;
     if(blob&&uploadId===savedAudioId)uploadedBlob=blob;
@@ -164,6 +174,7 @@ async function loadDraft(id){
     $("hpdate").value=d.date||new Date().toISOString().slice(0,10);$("hprant").value=String(d.rant||4);
     $("hpdesc").value=d.desc||"";$("hpscript").value=d.script||"";$("hptr").value=d.transcript||"";
     $("hpchapters").value=d.chapters||"";$("hpwhen").value=d.whenLocal||"";
+    $("hpmode").value=d.mode==="plain"?"plain":"ai";syncMode();
     transcriptWords=Array.isArray(d.transcriptWords)?d.transcriptWords:[];
     if(d.audio){
       const parts=[];
@@ -245,8 +256,8 @@ $("hpdescribe").onclick=async()=>{
   const btn=$("hpdescribe"),status=$("hpdescribeStatus");btn.disabled=true;delete status.dataset.error;
   try{
     let transcript=$("hptr").value.trim();
-    if(!transcript&&blob){status.textContent="Transcribing audio first...";const upload=await ensureUploaded();const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});transcript=String(result.transcript||"").trim();$("hptr").value=transcript;transcriptWords=Array.isArray(result.words)?result.words:[];await maybeGenerateChapters()}
-    if(!transcript)throw new Error("Choose audio or add a transcript first.");
+    if(!transcript&&blob&&!noAI()){status.textContent="Transcribing audio first...";const upload=await ensureUploaded();const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});transcript=String(result.transcript||"").trim();$("hptr").value=transcript;transcriptWords=Array.isArray(result.words)?result.words:[];await maybeGenerateChapters()}
+    if(!transcript)throw new Error(noAI()?"Add a transcript by hand, or choose AI transcription, before generating a description.":"Choose audio or add a transcript first.");
     status.textContent="Generating description with Gemini...";
     const result=await api({action:"describe",title:$("hptitle").value,unit:$("hpunit").value,transcript});
     if(!result.description)throw new Error("Gemini returned no description.");
@@ -256,22 +267,22 @@ $("hpdescribe").onclick=async()=>{
 };
 
 $("hppub").onclick=async()=>{
-  const title=$("hptitle").value.trim();
+  const title=$("hptitle").value.trim(),skipAI=noAI();
   if(!blob){msg("Record or choose audio first.");return}
   if(!title){msg("Add a title first.");return}
   if($("hpwhen").value&&new Date($("hpwhen").value).getTime()<=Date.now()){msg("Choose a future publish time, or leave it blank to publish now.");return}
   const btn=$("hppub"),prog=$("hpprog");btn.disabled=true;prog.hidden=false;prog.value=0;
   try{
-msg("Preparing upload…");
+msg(skipAI?"Preparing upload (no AI transcription)…":"Preparing upload…");
     const {id,parts}=await ensureUploaded();
-    if(!transcriptWords.length){
+    if(!skipAI&&!transcriptWords.length){
       msg("Generating word timings for transcript highlighting…");
       const transcriptResult=await api({action:"transcribe",id,parts,size:blob.size,type:blob.type});
       transcriptWords=Array.isArray(transcriptResult.words)?transcriptResult.words:[];
       if(!$("hptr").value.trim()||audioEdited)$("hptr").value=transcriptResult.transcript||"";
       if(!transcriptWords.length)throw new Error("No word timings were returned. Try transcribing the audio again before publishing.");
     }
-    if(FEATURES.autoChapters===true&&$("hpautoChapters").checked&&!parseChapterLines().length){
+    if(!skipAI&&FEATURES.autoChapters===true&&$("hpautoChapters").checked&&!parseChapterLines().length){
       await maybeGenerateChapters();
       if(!parseChapterLines().length)throw new Error("Automatic chapter generation failed. Uncheck the chapter option or add chapters manually, then publish again.");
     }

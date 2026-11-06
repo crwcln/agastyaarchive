@@ -75,6 +75,8 @@
 
   <section class="card hf sec" id="trCard">
     <h2>Transcript &amp; chapters</h2>
+    <div class="field-head"><label for="hpmode">Transcription</label><select id="hpmode"><option value="ai" selected>AI transcription + chapters</option><option value="plain">No AI — upload as-is</option></select></div>
+    <div id="hpmodeNote" class="ai-status" role="status" aria-live="polite"></div>
     <div id="transcriptField"><div class="field-head"><label for="hptr">Transcript</label><button type="button" id="hptranscribe">Transcribe audio</button></div><div id="hptranscribeStatus" class="ai-status" role="status" aria-live="polite"></div><textarea id="hptr" placeholder="Paste or edit the episode transcript"></textarea></div><div id="chapterEditor"><label class="chapter-options"><input type="checkbox" id="hpautoChapters" checked> Automatically generate chapters for this recording</label><label for="hpchapters">Episode chapters (one per line: 00:00 Introduction)</label><textarea id="hpchapters" placeholder="00:00 Introduction"></textarea><div id="hpchapterStatus" class="ai-status" role="status" aria-live="polite"></div></div>
 
   </section>
@@ -89,5 +91,6 @@
 </main>
 <script src="/host/shell.js"></script>
 <script src="/host/studio.js"></script>
+<script src="/host/editor.js"></script>
 <script src="/host/record.js"></script>
 </body></html>
