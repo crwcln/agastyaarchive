@@ -2,6 +2,7 @@
 // POST /api/episodes  -> admin actions: check | upload-start | publish | delete; PUT uploads an audio part
 import { getStore } from "@edgeone/pages-blob";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { wavToMp3, streamWavToMp3 } from "../lib/audio.js";
 
 const CHUNK = 2 * 1024 * 1024, MAX_CHUNKS = 500;
 const pad = i => String(i).padStart(5, "0");
@@ -17,6 +18,13 @@ const readAll = async (store, prefix) => {
   return (await Promise.all(blobs.map(o => store.get(o.key, { type: "json" }).catch(() => null)))).filter(Boolean);
 };
 const dropAudio = async (store, id) => { const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" }); for (const o of blobs) await store.delete(o.key); };
+const readUpload = async (store, id, parts) => {
+  const raw = await Promise.all(Array.from({ length: parts }, (_, i) => store.get(`audio/${id}/${pad(i)}`, { type: "arrayBuffer", consistency: "strong" })));
+  const missing = raw.findIndex(part => !part);
+  if (missing >= 0) throw new Error(`Audio part ${missing + 1} is missing. Upload the audio again.`);
+  const chunks = raw.map(part => new Uint8Array(part)), size = chunks.reduce((total, part) => total + part.byteLength, 0);
+  return { chunks, size };
+};
 const cleanWords = words => Array.isArray(words) ? words.slice(0, 30000).map(w => ({ word: clip(w.word, 100), start: Number(w.start), end: Number(w.end) })).filter(w => w.word && Number.isFinite(w.start) && Number.isFinite(w.end) && w.start >= 0 && w.end >= w.start) : [];
 const newestFirst = (a, c) => Date.parse(c.updatedAt) - Date.parse(a.updatedAt);
 const reactionTotals = c => Object.fromEntries(REACTIONS.map(r => [r, Math.max(0, Number(c && c[r]) || 0)]));
@@ -255,9 +263,94 @@ async function handle(context) {
   if (b.action === "discard-upload") {
     const id = String(b.id || "");
     if (!/^[a-z0-9]{6,20}$/.test(id)) return json({ error: "Bad upload id" }, 400);
-    const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" });
-    for (const item of blobs) await store.delete(item.key);
+    const meta = await store.get(`audio-meta/${id}.json`, { type: "json" }).catch(() => null);
+    await dropAudio(store, id);
+    await store.delete(`audio-meta/${id}.json`).catch(() => {});
+    if (meta && meta.jobId) await store.delete(`enhance-jobs/${meta.jobId}.json`).catch(() => {});
     return json({ ok: true });
+  }
+
+  if (b.action === "enhance-start") { // one-click Studio Sound via Resemble AI; the job is polled by enhance-status
+    if (!env.RESEMBLE_API_KEY) return json({ error: "AI enhancement is not set up. Add RESEMBLE_API_KEY to the cloud-function environment." }, 503);
+    const id = String(b.id || ""), parts = Math.floor(+b.parts), size = Math.floor(+b.size), maxEnhanceBytes = 100 * 1024 * 1024;
+    if (!ID_RE.test(id) || !(parts >= 1 && parts <= MAX_CHUNKS) || !(size > 0 && size <= maxEnhanceBytes)) return json({ error: "Audio must be between 1 byte and 100 MB to enhance." }, 400);
+    let upload;
+    try { upload = await readUpload(store, id, parts); } catch (e) { return json({ error: e.message }, 400); }
+    if (upload.size !== size) return json({ error: "Uploaded audio size does not match." }, 400);
+    const rawType = String(b.type || "").split(";")[0].trim(), type = /^audio\/[\w.+-]+$/.test(rawType) ? rawType : "audio/mpeg";
+    const ext = { "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/x-pn-wav": "wav", "audio/vnd.wave": "wav", "audio/mp4": "m4a", "audio/m4a": "m4a", "audio/x-m4a": "m4a", "audio/ogg": "ogg", "audio/aac": "aac", "audio/flac": "flac", "audio/x-flac": "flac" }[type] || "mp3";
+    const form = new FormData();
+    form.append("audio_file", new Blob(upload.chunks, { type }), `episode.${ext}`);
+    form.append("remove_noise", "true");
+    form.append("normalize", "true");
+    form.append("studio_sound", "true");
+    let response;
+    try { response = await fetch("https://app.resemble.ai/api/v2/audio_enhancements", { method: "POST", headers: { Authorization: `Bearer ${env.RESEMBLE_API_KEY}` }, body: form }); }
+    catch (e) { return json({ error: `Could not reach Resemble: ${e.message}` }, 502); }
+    const text = await response.text();
+    let data = {}; try { data = JSON.parse(text); } catch {}
+    if (!response.ok) return json({ error: data.message || data.error || `Resemble rejected the audio (HTTP ${response.status}).` }, 502);
+    const jobId = String(data.uuid || "");
+    if (!/^[A-Za-z0-9-]{6,80}$/.test(jobId)) return json({ error: "Resemble did not return a valid job id." }, 502);
+    const outputId = newId();
+    await store.setJSON(`enhance-jobs/${jobId}.json`, { id: outputId, sourceId: id, size, type, status: "pending", createdAt: new Date().toISOString() });
+    return json({ status: "pending", jobId, id: outputId });
+  }
+
+  if (b.action === "enhance-status") { // poll Resemble, then store the enhanced audio as a fresh upload
+    if (!env.RESEMBLE_API_KEY) return json({ error: "AI enhancement is not set up. Add RESEMBLE_API_KEY to the cloud-function environment." }, 503);
+    const jobId = String(b.jobId || "");
+    if (!/^[A-Za-z0-9-]{6,80}$/.test(jobId)) return json({ error: "Bad enhancement job" }, 400);
+    const jobKey = `enhance-jobs/${jobId}.json`, job = await store.get(jobKey, { type: "json" }).catch(() => null);
+    if (!job) return json({ error: "Enhancement job not found." }, 404);
+    if (job.status === "completed" && job.audio) return json({ status: "completed", audio: job.audio });
+    if (job.status === "failed") return json({ status: "failed", error: job.error || "Resemble could not enhance this audio." });
+    let response;
+    try { response = await fetch(`https://app.resemble.ai/api/v2/audio_enhancements/${encodeURIComponent(jobId)}`, { headers: { Authorization: `Bearer ${env.RESEMBLE_API_KEY}` } }); }
+    catch (e) { return json({ error: `Could not reach Resemble: ${e.message}` }, 502); }
+    const text = await response.text();
+    let data = {}; try { data = JSON.parse(text); } catch {}
+    if (!response.ok) return json({ error: data.message || data.error || `Resemble status check failed (HTTP ${response.status}).` }, 502);
+    if (data.status === "failed" || data.status === "error") {
+      job.status = "failed"; job.error = data.error_message || data.message || "Resemble could not enhance this audio.";
+      await store.setJSON(jobKey, job);
+      return json({ status: "failed", error: job.error });
+    }
+    if (data.status !== "completed" || !data.enhanced_audio_url) return json({ status: "processing" });
+    let audioResponse;
+    try { audioResponse = await fetch(data.enhanced_audio_url); }
+    catch (e) { return json({ error: `Could not download the enhanced audio: ${e.message}` }, 502); }
+    if (!audioResponse.ok) return json({ error: `Could not download the enhanced audio (HTTP ${audioResponse.status}).` }, 502);
+    const length = Number(audioResponse.headers.get("content-length")) || 0;
+    let audio;
+    try {
+      if (!audioResponse.body || typeof audioResponse.body.getReader !== "function" || (length > 0 && length <= 64 * 1024 * 1024)) {
+        const wav = new Uint8Array(await audioResponse.arrayBuffer());
+        if (!wav.byteLength) return json({ error: "Resemble returned an empty audio file." }, 502);
+        let bytes = wav, mime = "audio/wav";
+        try { bytes = wavToMp3(wav); mime = "audio/mpeg"; } catch {}
+        const count = Math.ceil(bytes.byteLength / CHUNK);
+        if (count > MAX_CHUNKS) return json({ error: "The enhanced audio is too large to store." }, 502);
+        for (let i = 0; i < count; i++) await store.set(`audio/${job.id}/${pad(i)}`, bytes.slice(i * CHUNK, Math.min(bytes.byteLength, (i + 1) * CHUNK)).buffer);
+        audio = { id: job.id, parts: count, size: bytes.byteLength, type: mime };
+      } else {
+        let part = 0;
+        const stored = await streamWavToMp3(audioResponse.body, async bytes => {
+          if (part >= MAX_CHUNKS) throw new Error("The enhanced audio is too large to store.");
+          await store.set(`audio/${job.id}/${pad(part++)}`, bytes.buffer);
+        });
+        audio = { id: job.id, parts: stored.parts, size: stored.size, type: "audio/mpeg" };
+      }
+    } catch (e) {
+      await dropAudio(store, job.id).catch(() => {});
+      job.status = "failed"; job.error = `Could not save the enhanced audio: ${e.message}`;
+      await store.setJSON(jobKey, job);
+      return json({ status: "failed", error: job.error });
+    }
+    await store.setJSON(`audio-meta/${job.id}.json`, { ...audio, jobId, createdAt: new Date().toISOString() });
+    job.status = "completed"; job.audio = audio;
+    await store.setJSON(jobKey, job);
+    return json({ status: "completed", audio });
   }
 
   if (b.action === "transcribe") {

@@ -119,5 +119,7 @@
 .ae-dot{width:11px;height:11px;border-radius:50%;background:#ff453a;animation:aeblink 1s ease-in-out infinite}
 @keyframes aeblink{50%{opacity:.25}}
 .ae-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-top:12px}
+#hpenhanceStatus{min-height:1.2em;margin-top:8px;color:var(--mute);font-size:12.5px}
+#hpenhanceStatus[data-error="true"]{color:#ff8a80}
 @media (max-width:640px){.ae-label{min-width:100%}.ae-view{height:180px}}
 @media (prefers-reduced-motion:reduce){.ae-busy i,.ae-dot{animation:none}}

@@ -107,11 +107,23 @@ async function ensureUploaded(){
   return {id:uploadId,parts:uploadedParts};
 }
 function discardTemporaryUpload(){if(uploadId&&uploadId!==savedAudioId)api({action:"discard-upload",id:uploadId}).catch(()=>{})}
-function setAudio(b){audioEdited=false;transcriptWords=[];$("hpchapters").value="";$("hpchapterStatus").textContent="";discardTemporaryUpload();uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);msg((b.size<1048576?Math.max(1,Math.round(b.size/1024))+" KB":(b.size/1048576).toFixed(1)+" MB")+" ready.")}
+async function downloadUpload(audio){
+  const parts=[];
+  for(let i=0;i<audio.parts;i++){
+    const start=i*CHUNK,end=Math.min(audio.size-1,start+CHUNK-1);
+    const response=await fetch("/api/audio?upload="+encodeURIComponent(audio.id),{headers:{"x-admin-password":pw,"Range":"bytes="+start+"-"+end}});
+    if(!response.ok)throw new Error("Couldn’t download the enhanced audio (HTTP "+response.status+").");
+    const part=await response.arrayBuffer();
+    if(part.byteLength!==end-start+1)throw new Error("An enhanced audio part was incomplete.");
+    parts.push(part);
+  }
+  return new Blob(parts,{type:audio.type||"audio/wav"});
+}
+function setAudio(b){audioEdited=false;transcriptWords=[];$("hpchapters").value="";$("hpchapterStatus").textContent="";$("hpenhanceStatus").textContent="";delete $("hpenhanceStatus").dataset.error;discardTemporaryUpload();uploadId=null;uploadedBlob=null;uploadedParts=0;blob=b;$("hptr").value="";$("hpprev").src=URL.createObjectURL(b);msg((b.size<1048576?Math.max(1,Math.round(b.size/1024))+" KB":(b.size/1048576).toFixed(1)+" MB")+" ready.")}
 function clearAudio(){
   discardTemporaryUpload();
   uploadId=null;uploadedBlob=null;uploadedParts=0;blob=null;transcriptWords=[];
-  $("hptr").value="";$("hpchapters").value="";$("hpchapterStatus").textContent="";$("hpprev").removeAttribute("src");msg("");
+  $("hptr").value="";$("hpchapters").value="";$("hpchapterStatus").textContent="";$("hpenhanceStatus").textContent="";delete $("hpenhanceStatus").dataset.error;$("hpprev").removeAttribute("src");msg("");
 }
 const editor=AudioEditor.create({
   confirm:HOST.confirm,notify:HOST.notify,
@@ -187,12 +199,62 @@ async function loadDraft(id){
         parts.push(part);
       }
       blob=new Blob(parts,{type:d.audio.type||"audio/webm"});uploadId=d.audio.id;uploadedBlob=blob;uploadedParts=d.audio.chunks;
+      $("hpenhanceStatus").textContent="";delete $("hpenhanceStatus").dataset.error;
       $("hpprev").src=URL.createObjectURL(blob);studio.showFile(blob);
     }
     $("hpsavedraft").textContent="Update draft";msg("Draft loaded. Continue editing, then save or publish when ready.");loaded=true;
   }catch(e){msg("Couldn’t load draft: "+e.message)}
   finally{btn.disabled=!loaded}
 }
+let enhancing=false;
+async function enhanceAudio(){
+  if(enhancing)return;
+  const btn=$("hpenhance"),status=$("hpenhanceStatus");
+  if(!blob){status.textContent="Record or choose audio first.";status.dataset.error="true";return}
+  const yes=await HOST.confirm("Enhance this audio with Resemble AI? It removes room noise and balances the voice, uses your Resemble plan (billed per minute), and replaces the current audio. It can take a few minutes; don’t edit until it finishes.","AI Enhance");
+  if(!yes)return;
+  enhancing=true;btn.disabled=true;delete status.dataset.error;
+  let outputAudio=null;
+  try{
+    if(editor.isDirty()||!["audio/mpeg","audio/mp3"].includes((blob.type||"").split(";")[0])){
+      status.textContent="Preparing the audio for enhancement…";
+      const prepared=await editor.apply(p=>{$("hpprog").value=Math.round(p*100)},true);
+      btn.disabled=true;
+      if(prepared!==blob){discardTemporaryUpload();uploadId=null;uploadedBlob=null;uploadedParts=0;blob=prepared;$("hpprev").src=URL.createObjectURL(prepared)}
+    }
+    if(!/^audio\/(mpeg|mp3|wav|x-wav|wave|x-pn-wav|vnd\.wave|mp4|m4a|x-m4a|ogg|aac|flac|x-flac)$/.test((blob.type||"").split(";")[0]))throw new Error("This audio needs to be an MP3, WAV, M4A, OGG, AAC or FLAC file. Record again or import an MP3.");
+    const upload=await ensureUploaded();
+    status.textContent="Sending the audio to Resemble Studio Sound…";
+    const started=await api({action:"enhance-start",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});
+    if(!started.jobId)throw new Error("Resemble did not start the enhancement.");
+    let result=null;
+    const deadline=Date.now()+10*60*1000;
+    while(Date.now()<deadline){
+      await new Promise(resolve=>setTimeout(resolve,5000));
+      status.textContent="Resemble is enhancing the audio… this can take a few minutes.";
+      try{result=await api({action:"enhance-status",jobId:started.jobId})}
+      catch(e){if(/HTTP (?:429|50[234])|Could not reach Resemble|Could not download the enhanced audio/.test(e.message))continue;throw e}
+      if(result.status==="completed")break;
+      if(result.status==="failed")throw new Error(result.error||"Resemble could not enhance this audio.");
+    }
+    if(!result||result.status!=="completed")throw new Error("Enhancement is taking too long. Try again later.");
+    outputAudio=result.audio;
+    if(editor.isDirty())throw new Error("You edited the audio while it was enhancing. Finish or undo those edits, then try AI Enhance again.");
+    status.textContent="Downloading the enhanced audio…";
+    const enhanced=await downloadUpload(outputAudio);
+    api({action:"discard-upload",id:outputAudio.id}).catch(()=>{});outputAudio=null;
+    discardTemporaryUpload();uploadId=null;uploadedBlob=null;uploadedParts=0;
+    status.textContent="Applying the enhancement…";
+    const preRendered=(enhanced.type||"").split(";")[0]==="audio/mpeg";
+    if(!await editor.replaceAudio(enhanced,{rendered:preRendered}))throw new Error("The audio changed before the enhancement finished. Try again.");
+    const out=preRendered?enhanced:await editor.apply(p=>{$("hpprog").value=Math.round(p*100)});
+    blob=out;$("hpprev").src=URL.createObjectURL(out);
+    status.textContent="Enhanced. Review the audio, then publish or save a draft.";
+    msg("AI enhancement applied ("+(out.size/1048576).toFixed(1)+" MB). Review it, then publish or save a draft.");HOST.notify("Audio enhanced.");
+  }catch(e){if(outputAudio)api({action:"discard-upload",id:outputAudio.id}).catch(()=>{});status.textContent="Enhancement failed: "+e.message;status.dataset.error="true";msg(status.textContent)}
+  finally{enhancing=false;btn.disabled=!editor.hasAudio()}
+}
+$("hpenhance").onclick=enhanceAudio;
 $("hpsavedraft").hidden=FEATURES.episodeDrafts===false;
 loadDraft();
 window.addEventListener("host-route-query",event=>{

@@ -1,5 +1,5 @@
 {
   "name": "agastya-archive",
   "private": true,
-  "dependencies": { "@edgeone/pages-blob": "latest" }
+  "dependencies": { "@breezystack/lamejs": "^1.2.7", "@edgeone/pages-blob": "latest" }
 }

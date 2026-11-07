@@ -8,14 +8,21 @@ const published = new Map(); // id -> {id, size, type}: published audio never ch
 const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length === y.length && timingSafeEqual(x, y); };
 
 async function handle({ request, env }) {
-  const url = new URL(request.url), id = url.searchParams.get("id") || "", draftId = url.searchParams.get("draft") || "";
-  const store = getStore({ name: "archive" });
+  const url = new URL(request.url), id = url.searchParams.get("id") || "", draftId = url.searchParams.get("draft") || "", uploadId = url.searchParams.get("upload") || "";
+  const store = getStore({ name: "archive" }), strong = getStore({ name: "archive", consistency: "strong" });
   let audio, priv = false;
-  if (draftId) {
+  if (draftId || uploadId) {
     if (!env || !env.ADMIN_PASSWORD || !same(request.headers.get("x-admin-password"), env.ADMIN_PASSWORD)) return new Response("Unauthorized", { status: 401, headers: { "Cache-Control": "no-store" } });
-    const draft = /^[a-z0-9]{6,20}$/.test(draftId) ? await store.get(`drafts/${draftId}.json`, { type: "json" }).catch(() => null) : null;
-    if (!draft || !draft.audio) return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
-    audio = draft.audio;priv = true;
+    if (draftId) {
+      const draft = /^[a-z0-9]{6,20}$/.test(draftId) ? await strong.get(`drafts/${draftId}.json`, { type: "json", consistency: "strong" }).catch(() => null) : null;
+      if (!draft || !draft.audio) return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+      audio = draft.audio;
+    } else {
+      const meta = /^[a-z0-9]{6,20}$/.test(uploadId) ? await strong.get(`audio-meta/${uploadId}.json`, { type: "json", consistency: "strong" }).catch(() => null) : null;
+      if (!meta) return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+      audio = meta;
+    }
+    priv = true;
   } else {
     audio = published.get(id); // skips downloading the whole episode index for every 2 MB range request
     if (!audio) {
@@ -37,7 +44,7 @@ async function handle({ request, env }) {
   }
   const ci = Math.floor(start / CHUNK);
   end = Math.min(end, (ci + 1) * CHUNK - 1);
-  const buf = await store.get(`audio/${audio.id}/${String(ci).padStart(5, "0")}`, { type: "arrayBuffer" });
+  const buf = priv ? await strong.get(`audio/${audio.id}/${String(ci).padStart(5, "0")}`, { type: "arrayBuffer", consistency: "strong" }) : await store.get(`audio/${audio.id}/${String(ci).padStart(5, "0")}`, { type: "arrayBuffer" });
   if (!buf) return new Response("Missing audio part", { status: 404 });
 
   const body = buf.slice(start - ci * CHUNK, end - ci * CHUNK + 1);

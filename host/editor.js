@@ -12,7 +12,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function create(opts){
   opts=opts||{};
   const E=Object.fromEntries(["aeditor","aecanvas","aemini","aeview","aeplay","aeplaysel","aepreview","aesel","aezout","aezfit","aezin","aedelete","aecut","aecopy","aepaste","aetrim","aerec","aerecsel",
-    "aefile","aefilesel","aefilesellab","aepre","aesilence","aeinsil","aefadein","aefadeout","aegain","aenorm","aepauses","aeundo","aeredo","aerevert","aeparams","aerecbar","aerectime","aerectext",
+    "aefile","aefilesel","aefilesellab","aepre","aesilence","aeinsil","aefadein","aefadeout","aegain","aenorm","aepauses","aeundo","aeredo","aerevert","aeparams","aerecbar","aerectime","aerectext","hpenhance",
     "aerecstop","aereccancel","aebusy","aebusytext","aestatus","aeapply","hptime","sttotal"].map(id=>[id,byId(id)||document.createElement("div")]));
   const box=E.aeditor,cv=E.aecanvas,mini=E.aemini;
   let sources=[],segs=[],origSig="",renderedSig="",blobCurrent=null,clipSegs=null,sel=null,head=0,pps=60,scroll=0,ver=0;
@@ -101,6 +101,21 @@ function create(opts){
     token++;stopPlay();if(recCtl){try{recCtl.cancel()}catch(e){}recCtl=null;recMode=null;clearInterval(recTimer);E.aerecbar.hidden=true}
     sources=[];segs=[];origSig=renderedSig="";blobCurrent=null;clipSegs=null;sel=null;head=0;undoS=[];redoS=[];failed=false;miniCache=null;ver++;
     box.hidden=true;E.aeparams.hidden=true;E.aebusy.hidden=true;busyFlag=false;ui();
+  }
+  async function replaceAudio(blob,opts){ // swap in an AI-enhanced copy while keeping undo history and the length-based transcript
+    const my=++token;busy(true,"Opening the enhanced audio…");
+    try{
+      const buf=await decodeBlob(blob);if(my!==token)return false;
+      stopPlay();remember();
+      const si=addSource(buf);segs=[{s:si,a:0,b:buf.length,g:1}];
+      const s=sig();renderedSig=opts&&opts.rendered?s:"";blobCurrent=blob;sel=null;head=0;failed=false;miniCache=null;ver++;
+      box.hidden=false;fit();
+    }catch(e){
+      if(my!==token)return false;
+      throw new Error("The enhanced audio couldn’t be opened ("+(e&&e.message||"unsupported format")+").");
+    }finally{if(my===token)busy(false)}
+    if(my!==token)return false;
+    refreshStatus("Enhanced audio ready. Review it, then publish or save a draft.");redraw();return true;
   }
 
   /* ---------- view ---------- */
@@ -359,9 +374,9 @@ function create(opts){
     const tail=enc.flush();if(tail&&tail.length)parts.push(new Uint8Array(tail.buffer,tail.byteOffset,tail.length).slice());
     return new Blob(parts,{type:"audio/mpeg"});
   }
-  async function apply(onProgress){
+  async function apply(onProgress,force){
     if(!segs.length||failed)return blobCurrent;
-    const s=sig();if(s===renderedSig)return blobCurrent;
+    const s=sig();if(!force&&s===renderedSig)return blobCurrent;
     stopPlay();busy(true,"Rendering your edits…");
     try{const out=await renderMp3(p=>{if(onProgress)onProgress(p);E.aebusytext.textContent="Rendering your edits… "+Math.round(p*100)+"%"});blobCurrent=out;renderedSig=s;return out}
     finally{busy(false);ui()}
@@ -375,7 +390,7 @@ function create(opts){
     E.aeplaysel.disabled=E.aepreview.disabled=!hasSel;
     [E.aedelete,E.aecut,E.aecopy,E.aetrim,E.aesilence,E.aefadein,E.aefadeout,E.aerecsel].forEach(b=>b.disabled=!hasSel);
     E.aepaste.disabled=!(can&&clipSegs);
-    [E.aeinsil,E.aegain,E.aenorm,E.aepauses,E.aerec,E.aezin,E.aezout,E.aezfit].forEach(b=>b.disabled=!can);
+    [E.aeinsil,E.aegain,E.aenorm,E.aepauses,E.aerec,E.aezin,E.aezout,E.aezfit,E.hpenhance].forEach(b=>b.disabled=!can);
     E.aefile.disabled=!can;E.aefilesel.disabled=!hasSel;E.aefilesellab.classList.toggle("disabled",!hasSel);
     E.aeundo.disabled=!can||!undoS.length;E.aeredo.disabled=!can||!redoS.length;E.aerevert.disabled=!can||sig()===origSig;
     E.aeapply.disabled=!can||sig()===renderedSig;
@@ -447,7 +462,7 @@ function create(opts){
     else if(e.key==="+"||e.key==="="){zoomAt(1.6,(cv.clientWidth||600)/2)}else if(e.key==="-"){zoomAt(1/1.6,(cv.clientWidth||600)/2)}else if(e.key==="0"){fit()}
   });
   ui();
-  return{load,reset,apply,fit,
+  return{load,reset,replaceAudio,apply,fit,
     isDirty:()=>segs.length>0&&sig()!==renderedSig,hasAudio:()=>segs.length>0&&!failed,duration:()=>dur(),playhead:()=>head/SR,current:()=>blobCurrent,
     _debug:()=>({segs:JSON.parse(sig()),sources:sources.length,sel,head,pps,scroll,total:total()}),_select:(a,b)=>{setSel(Math.round(a*SR),Math.round(b*SR));ui();draw()},_head:t=>{head=Math.round(t*SR);ui();draw()}};
 }
