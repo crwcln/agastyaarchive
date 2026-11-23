@@ -139,3 +139,8 @@ export async function handle(context) {
   }
   return json({ error: "Unknown live action" }, 400);
 }
+
+export async function onRequest(context) {
+  try { return await handle(context); }
+  catch (e) { return json({ error: "Server error: " + (e && e.message || e) }, 500); }
+}
