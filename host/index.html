@@ -29,6 +29,7 @@ body.booting{overflow:hidden}
 <link rel="stylesheet" href="/host/host.css">
 <link rel="stylesheet" href="/host/extras.css">
 <link rel="stylesheet" href="/host/studio.css">
+<link rel="stylesheet" href="/host/live.css">
 </head>
 <body data-page="workspace" class="workspace-page booting">
 <div id="boot" role="status" aria-live="polite" aria-label="Loading"><div class="boot-card">
@@ -47,6 +48,8 @@ body.booting{overflow:hidden}
     <a class="workspace-tab" href="#dashboard" data-view="dashboard" role="tab">Dashboard</a>
     <a class="workspace-tab" href="#record" data-view="record" role="tab">Record</a>
     <a class="workspace-tab" href="#ideas" data-view="ideas" role="tab">Ideas</a>
+    <a class="workspace-tab" href="#script" data-view="script" role="tab">Scripts</a>
+    <a class="workspace-tab" href="#live" data-view="live" role="tab">Live</a>
   </div>
   <div class="workspace-loading" id="workspaceLoading" role="status"><span class="loading-mark"></span><span id="workspaceLoadingText">Opening your studio…</span></div>
   <div class="workspace-slider" id="workspaceSlider" aria-live="polite">
@@ -54,6 +57,8 @@ body.booting{overflow:hidden}
       <section class="workspace-panel" id="workspace-dashboard" aria-label="Dashboard"></section>
       <section class="workspace-panel" id="workspace-record" aria-label="Record"></section>
       <section class="workspace-panel" id="workspace-ideas" aria-label="Ideas"></section>
+      <section class="workspace-panel" id="workspace-script" aria-label="Scripts"></section>
+      <section class="workspace-panel" id="workspace-live" aria-label="Live"></section>
     </div>
   </div>
 </main>

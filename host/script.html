@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scripts · Agastya Archive Host</title>
+<meta name="robots" content="noindex,nofollow">
+<script src="/site-config.js"></script>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/host/host.css">
+<link rel="stylesheet" href="/host/extras.css">
+</head>
+<body data-page="script">
+<div id="hdr"></div><div id="gate"></div>
+<main class="hmain" id="app" hidden>
+  <div class="ptitle"><div><h1>Scripts</h1><p>Draft, generate and rehearse episode scripts. Nothing here is published with an episode.</p></div><a class="btn" href="/host/#ideas">← Ideas</a></div>
+  <section class="card hf composer">
+    <h2>Script maker</h2>
+    <label for="scTitle">Title or topic</label><input id="scTitle" maxlength="200" placeholder="e.g. Why the Silk Road was really about paper">
+    <div class="r2"><div><label for="scUnit">Unit</label><select id="scUnit"></select></div><div><label for="scRant">Rant level</label><select id="scRant"></select></div></div>
+    <div class="r2"><div><label for="scMinutes">Length</label><select id="scMinutes"><option value="3">3 minutes</option><option value="5" selected>5 minutes</option><option value="8">8 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option></select></div><div><label for="scTone">Tone</label><select id="scTone"><option>Energetic and conversational</option><option>Dryly funny</option><option>Dramatic storytelling</option><option>Clear and classroom-friendly</option><option>Sharp and argumentative</option></select></div></div>
+    <label for="scNotes">Notes from the idea (optional)</label><textarea id="scNotes" maxlength="8000" placeholder="Angle, sources, rant potential…"></textarea>
+    <div class="acts"><button class="go" id="scGenerate" type="button">Generate with AI</button><button id="scSave" type="button">Save script</button><button id="scCopy" type="button">Copy</button><a class="btn" id="scRecord" href="/host/#record">Open in Record →</a><span id="scStatus" class="mute" role="status" aria-live="polite"></span></div>
+    <textarea id="scText" maxlength="100000" placeholder="Write your script here, or generate a first draft with Gemini." style="min-height:340px"></textarea>
+  </section>
+  <div class="ideas-bar"><h2 style="font-size:24px">Saved scripts</h2><input id="scSearch" class="search" type="search" placeholder="Search scripts"></div>
+  <div id="scStatusList" class="status" role="status" aria-live="polite"></div>
+  <div id="scList"></div>
+</main>
+<script src="/host/shell.js"></script>
+<script src="/host/script.js"></script>
+</body></html>

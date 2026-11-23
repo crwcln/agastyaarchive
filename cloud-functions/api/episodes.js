@@ -12,6 +12,10 @@ const REACTIONS = ["fire", "laugh", "mindblown", "insight"];
 const IDEA_STATUS = ["new", "discussing", "planned", "recorded", "parked"], ID_RE = /^[a-z0-9]{6,20}$/;
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const clip = (v, n) => String(v == null ? "" : v).slice(0, n);
+const parseJsonText = value => {
+  const text = String(value || "").trim().replace(/^\x60{3}(?:json)?\s*/i, "").replace(/\s*\x60{3}\s*$/, "").trim();
+  try { return JSON.parse(text); } catch { return null; }
+};
 const person = p => ({ name: clip(p && p.name, 40).trim() || "Someone", role: p && p.role === "Co-host" ? "Co-host" : "Host" });
 const readAll = async (store, prefix) => {
   const { blobs } = await store.list({ prefix, consistency: "strong" });
@@ -206,6 +210,37 @@ async function handle(context) {
     return json({ ok: true });
   }
 
+  // ---- scripts: private host drafts, linked to ideas and drafts but never public ----
+  if (b.action === "list-scripts") return json({ scripts: (await readAll(store, "scripts/")).sort(newestFirst) });
+  if (b.action === "get-script") {
+    const id = String(b.id || "");
+    if (!ID_RE.test(id)) return json({ error: "Bad script id" }, 400);
+    const script = await store.get(`scripts/${id}.json`, { type: "json" }).catch(() => null);
+    return script ? json({ script }) : json({ error: "Script not found" }, 404);
+  }
+  if (b.action === "save-script") {
+    const s = b.script || {}, by = person(b.by), id = s.id ? String(s.id) : newId(), key = `scripts/${id}.json`;
+    if (!ID_RE.test(id)) return json({ error: "Bad script id" }, 400);
+    const old = s.id ? await store.get(key, { type: "json" }).catch(() => null) : null;
+    if (s.id && !old) return json({ error: "Script not found" }, 404);
+    const title = clip(s.title !== undefined ? s.title : old && old.title, 200).trim();
+    const text = clip(s.text !== undefined ? s.text : old && old.text, 100000);
+    if (!title) return json({ error: "Give the script a title first." }, 400);
+    const now = new Date().toISOString();
+    const script = { id, title, unit: clip(s.unit !== undefined ? s.unit : old && old.unit, 100),
+      notes: clip(s.notes !== undefined ? s.notes : old && old.notes, 8000), text,
+      ideaId: ID_RE.test(String(s.ideaId || "")) ? String(s.ideaId) : (old && old.ideaId) || null,
+      author: old ? old.author : by, createdAt: old ? old.createdAt : now, updatedAt: now, updatedBy: by };
+    await store.setJSON(key, script);
+    return json({ ok: true, script });
+  }
+  if (b.action === "delete-script") {
+    const id = String(b.id || "");
+    if (!ID_RE.test(id)) return json({ error: "Bad script id" }, 400);
+    await store.delete(`scripts/${id}.json`).catch(() => {});
+    return json({ ok: true });
+  }
+
   // ---- drafts: an episode in progress (text, notes, transcript and optionally audio), never public ----
   if (b.action === "list-drafts") {
     const drafts = await readAll(store, "drafts/");
@@ -238,6 +273,7 @@ async function handle(context) {
       rant: Math.min(5, Math.max(1, +e.rant || 3)), desc: clip(e.desc, 5000), script: clip(e.script, 200000), notes: clip(e.notes, 20000), transcript: clip(e.transcript, 200000),
       transcriptWords: cleanWords(e.transcriptWords), chapters: clip(e.chapters, 5000), whenLocal: clip(e.whenLocal, 20),
       mode: e.mode === "plain" ? "plain" : "ai",
+      liveCaptions: !!e.liveCaptions, skipAutoTranscript: !!e.skipAutoTranscript,
       ideaId: ID_RE.test(String(e.ideaId || "")) ? String(e.ideaId) : (old && old.ideaId) || null, audio,
       author: old ? old.author : by, createdAt: old ? old.createdAt : now, updatedAt: now, updatedBy: by };
     await store.setJSON(key, draft);
@@ -513,6 +549,40 @@ async function handle(context) {
     if (!chapters.length) return json({ error: "Gemini returned no usable chapters." }, 502);
     if (chapters[0].time > 10) chapters.unshift({ time: 0, title: "Introduction" });
     return json({ status, chapters });
+  }
+
+  if (b.action === "cleanup-transcript") {
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const transcript = String(b.transcript || "").trim(), duration = Number(b.duration), introSeconds = Math.max(0, Number(b.introSeconds) || 0);
+    if (!transcript) return json({ error: "Add a transcript first." }, 400);
+    if (transcript.length > 120000) return json({ error: "This transcript is too long to clean up in one go. Split it into smaller episodes." }, 400);
+    const segments = (Array.isArray(b.segments) ? b.segments : []).slice(0, 600).map(segment => {
+      const time = Number(segment && segment.time), text = String(segment && segment.text || "").trim().slice(0, 1200);
+      return Number.isFinite(time) && time >= 0 && text ? "[" + Math.floor(time / 60) + ":" + String(Math.floor(time % 60)).padStart(2, "0") + "] " + text : "";
+    }).filter(Boolean).join("\n").slice(0, 80000);
+    const example = JSON.stringify({ cleaned: "Cleaned transcript", cuts: [{ start: 12.5, end: 13.8, reason: "filler words" }] });
+    const input = "Edit this podcast transcript for a clean published version. Remove filler words such as um, uh and like when they are not meaningful, remove obvious false starts and repeated words, and fix punctuation and capitalization. Do not change the meaning, remove facts, or invent new words. Return only valid JSON in this shape: " + example + ". The cuts array lists short audio ranges that should be removed from the recording because they contain only filler, a false start or a long pause. Times are seconds from the start of the audio and must be at least " + Math.ceil(introSeconds) + " seconds into the episode (the intro music is locked). Never include overlapping cuts, never cut more than 20% of the episode, and return an empty cuts array when unsure. Episode: " + String(b.title || "").slice(0, 200) + ". Audio duration: " + Math.round(duration) + " seconds.\n\nTimestamped transcript:\n" + (segments || transcript.slice(0, 80000)) + "\n\nFull transcript:\n" + transcript.slice(0, 80000);
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(env.GEMINI_TEXT_MODEL || "gemini-3.8-flash") + ":generateContent", {
+      method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: input }] }], generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 16384 } })
+    });
+    let result = {}; try { result = await response.json(); } catch {}
+    if (!response.ok) return json({ error: result.error?.message || `Transcript cleanup failed (HTTP ${response.status}).` }, 502);
+    const text = (result.candidates || []).flatMap(item => item.content?.parts || []).map(part => part.text || "").join("\n").trim();
+    const parsed = parseJsonText(text);
+    if (!parsed || typeof parsed.cleaned !== "string" || !parsed.cleaned.trim()) return json({ error: "Gemini didn’t return a cleaned transcript." }, 502);
+    const cuts = (Array.isArray(parsed.cuts) ? parsed.cuts : []).map(cut => ({ start: Number(cut.start), end: Number(cut.end), reason: clip(cut.reason, 120).trim() || "Suggested cleanup" }))
+      .filter(cut => Number.isFinite(cut.start) && Number.isFinite(cut.end) && cut.end > cut.start + 0.1 && cut.start >= introSeconds && (!duration || cut.end <= duration))
+      .sort((a, c) => a.start - c.start).slice(0, 60);
+    const merged = [];
+    for (const cut of cuts) {
+      const last = merged[merged.length - 1];
+      if (last && cut.start <= last.end + 0.5) { last.end = Math.max(last.end, cut.end); continue; }
+      merged.push({ ...cut });
+    }
+    const totalCut = merged.reduce((sum, cut) => sum + cut.end - cut.start, 0);
+    const usable = duration > 0 && totalCut > duration * 0.2 ? [] : merged;
+    return json({ cleaned: parsed.cleaned.trim().slice(0, 120000), cuts: usable });
   }
 
   if (b.action === "describe") {

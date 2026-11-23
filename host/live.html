@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live · Agastya Archive Host</title>
+<meta name="robots" content="noindex,nofollow">
+<script src="/site-config.js"></script>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/host/host.css">
+<link rel="stylesheet" href="/host/extras.css">
+<link rel="stylesheet" href="/host/live.css">
+</head>
+<body data-page="live">
+<div id="hdr"></div><div id="gate"></div>
+<main class="hmain wide" id="app" hidden>
+  <div class="ptitle"><div><h1>Live studio</h1><p>Host a remote interview: guests join in a browser, you mix and record, and the chat, timer and on-screen questions stay in sync.</p></div><a class="btn" href="/host/#dashboard">← Dashboard</a></div>
+
+  <section class="card hf sec">
+    <h2>Room</h2>
+    <label for="lvTitle">Episode title</label><input id="lvTitle" maxlength="120" placeholder="e.g. Live with the history club">
+    <div class="acts"><button class="go" id="lvCreate" type="button">Start a live room</button><button id="lvEnd" type="button" disabled>End room</button><span id="lvStatus" class="mute" role="status" aria-live="polite"></span></div>
+    <div id="lvInvite" hidden><label for="lvLink">Guest invite link</label><div class="pwrow"><input id="lvLink" readonly><button id="lvCopy" type="button">Copy link</button></div><p class="fine">Share this with up to 8 guests. Guests don’t need a host password. WebRTC needs direct internet access; very restrictive networks may need a TURN server.</p></div>
+  </section>
+
+  <div class="lv-grid">
+    <section class="card hf lv-panel" id="lvGuestsCard">
+      <h2>Guests &amp; recording</h2>
+      <div class="lv-onair" id="lvOnair"><i></i><span id="lvOnairText">Standby</span><b id="lvClock">00:00</b></div>
+      <div id="lvPeers" class="lv-peers"><p class="mute">No guests yet. Start a room and share the invite link.</p></div>
+      <div class="acts"><button class="go" id="lvRecord" type="button" disabled>● Start recording</button><button id="lvPause" type="button" disabled>Pause</button><button id="lvStop" type="button" disabled>Stop</button><span id="lvRecStatus" class="mute"></span></div>
+      <div class="acts"><button id="lvDownload" type="button" disabled>Download recording</button><button class="go" id="lvSend" type="button" disabled>Send to Record editor →</button></div>
+      <p class="fine">The host mic and every guest are mixed into one recording. Sound effects are recorded too. Pausing stops the timeline; it does not create separate files.</p>
+    </section>
+
+    <section class="card hf lv-panel">
+      <h2>Show controls</h2>
+      <label>Sound effects <span class="mute">(heard by guests and recorded)</span></label>
+      <div class="lv-sfx"><button type="button" data-sfx="applause" disabled>Applause</button><button type="button" data-sfx="ding" disabled>Ding</button><button type="button" data-sfx="whoosh" disabled>Whoosh</button><button type="button" data-sfx="drumroll" disabled>Drumroll</button><button type="button" data-sfx="bell" disabled>Bell</button></div>
+      <label for="lvQuestion">On-screen text / question for guests</label><textarea id="lvQuestion" maxlength="500" placeholder="e.g. What year did the Silk Road peak?"></textarea>
+      <div class="acts"><button id="lvShowQuestion" type="button" disabled>Show to guests</button><button id="lvClearQuestion" type="button" disabled>Clear screen</button></div>
+      <label for="lvChat">Host chat <span class="mute">(visible to guests)</span></label><div class="pwrow"><input id="lvChat" maxlength="1000" placeholder="Say something to everyone…"><button id="lvSendChat" type="button" disabled>Send</button></div>
+      <div id="lvChatLog" class="lv-chat" role="log" aria-live="polite"></div>
+      <div class="acts"><button id="lvTimerStart" type="button" disabled>Start timer</button><button id="lvTimerPause" type="button" disabled>Pause timer</button><button id="lvTimerReset" type="button" disabled>Reset</button><b id="lvTimer" class="lv-timer">00:00</b></div>
+    </section>
+  </div>
+  <audio id="lvMonitor" hidden></audio>
+</main>
+<script src="/host/shell.js"></script>
+<script src="/host/live-store.js"></script>
+<script src="/host/live.js"></script>
+</body></html>

@@ -16,7 +16,7 @@ async function api(body){
 function header(){
   const page=document.body.dataset.page,link=(p,href,label)=>`<a href="${href}"${p===page?' class="on"':""}>${label}</a>`;
   $("hdr").innerHTML=`<header class="hbar"><a class="brand" href="/host/"><img src="/logo.svg" alt=""><span>The Agastya Archive</span><em>Host</em></a>
-<nav class="hnav">${link("dashboard","/host/#dashboard","Dashboard")}${link("record","/host/#record","Record")}${FEATURES.hostIdeas!==false?link("ideas","/host/#ideas","Ideas"):""}</nav>
+<nav class="hnav">${link("dashboard","/host/#dashboard","Dashboard")}${link("record","/host/#record","Record")}${FEATURES.hostIdeas!==false?link("ideas","/host/#ideas","Ideas"):""}${FEATURES.scriptMaker!==false?link("script","/host/#script","Scripts"):""}${FEATURES.liveStudio!==false?link("live","/host/#live","Live"):""}</nav>
 <div class="hright"><button type="button" id="hchangelog">What’s new</button><span class="who" id="hwho" hidden></span><button type="button" id="hswitch" hidden>Switch</button><a class="btn" href="/">View site ↗</a><button type="button" id="hlock">Lock</button></div></header>`;
   if(!$("toastStack")){const stack=document.createElement("div");stack.id="toastStack";stack.className="toast-stack";stack.setAttribute("aria-live","polite");stack.setAttribute("aria-atomic","false");document.body.append(stack)}
   if(!$("hostDialog")){
@@ -30,7 +30,7 @@ function header(){
       dialog.addEventListener("close",()=>resolve(dialog.returnValue==="confirm"),{once:true});
       dialog.showModal();
     });
-    $("hchangelog").onclick=()=>ask("What’s new · v"+(window.SITE_CONFIG&&window.SITE_CONFIG.version||"1.0.0"),"New in this release:\n• Dashboard, Record, and Ideas now share a smooth, single-page host studio.\n• Faster dashboard loading, with analytics loading separately.\n• Edit recordings on the waveform with trim, cut, replace, and undo.\n• Custom confirmations and status notifications.\n• Public episode comments and a host comment inbox.\n• New Archive logo and faster loading states.","Close").then(()=>{});
+    $("hchangelog").onclick=()=>ask("What’s new · v"+(window.SITE_CONFIG&&window.SITE_CONFIG.version||"1.0.0"),"New in this release:\n• A locked jazz intro is added to the start of every episode.\n• AI transcript cleanup suggests audio cuts you can apply with one click.\n• Scripts is a new tab, linked from Ideas for quick script drafts.\n• Live hosts multi-guest podcasts with chat, sound effects, timer and on-screen questions.\n• Live captions work for long Chrome/Edge recordings, with an auto-transcript off switch.\n• Dashboard, Record, Ideas, Scripts and Live share one smooth host studio.","Close").then(()=>{});
     window.__hostDialog=ask;
   }
   if(identity){$("hwho").hidden=$("hswitch").hidden=false;$("hwho").textContent=identity.name+" · "+identity.role;

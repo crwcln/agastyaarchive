@@ -7,6 +7,8 @@ const $=id=>document.getElementById(id),FEATURES=HOST.features;
 if(FEATURES.aiDescription!==true)$("hpdescribe").hidden=true;
 if(FEATURES.scriptGenerator!==true)$("scriptGenerator").hidden=true;
 if(FEATURES.transcribeAudio!==true)$("hptranscribe").hidden=true;
+if(FEATURES.transcriptCleanup!==true)$("hpcleanup").hidden=true;
+if(FEATURES.liveCaptions!==true)$("hpliveCaptionLabel").hidden=true;
 if(FEATURES.transcript===false)$("transcriptField").hidden=true;
 if(FEATURES.autoChapters!==true)$("chapterEditor").hidden=true;
 if(FEATURES.episodeScheduling===false)$("publishScheduleField").hidden=true;
@@ -19,16 +21,55 @@ const recordParams=new URLSearchParams(location.hash.includes("?")?location.hash
 if(recordParams.has("title"))$("hptitle").value=recordParams.get("title").slice(0,200);
 if(UNITS.includes(recordParams.get("unit")))$("hpunit").value=recordParams.get("unit");
 let pw=HOST.pw(),stream,rec,chunks=[],blob=null,transcriptWords=[],uploadId=null,uploadedBlob=null,uploadedParts=0,savedAudioId=null,draftId=null,audioEdited=false,t0=0,acc=0,tick=null;
+let captionRec=null,captionWanted=false,captionBase="",captionFinal=[],captionInterim="";
+const CaptionAPI=window.SpeechRecognition||window.webkitSpeechRecognition;
 const noAI=()=>$("hpmode").value==="plain";
+if(!CaptionAPI){$("hpliveCaption").checked=false;$("hpliveCaption").disabled=true;$("hpcaptionNote").textContent="Live captions aren’t available in this browser. Chrome or Edge can caption long recordings live; you can also paste a transcript below."}
 let autoChaptersChoice=$("hpautoChapters").checked;
 function syncMode(){
   const skip=noAI(),auto=$("hpautoChapters"),label=auto&&auto.parentElement;
   if(skip){autoChaptersChoice=auto.checked;auto.checked=false}else auto.checked=autoChaptersChoice;
   auto.disabled=skip;if(label)label.classList.toggle("disabled",skip);
   $("hptranscribe").hidden=skip||FEATURES.transcribeAudio!==true;
-  $("hpmodeNote").textContent=skip?"AI is off. The audio uploads exactly as it is; paste a transcript or type chapters yourself if you want them.":"";
+  $("hpmodeNote").textContent=skip?"AI is off. The audio uploads exactly as it is; paste a transcript or type chapters yourself if you want them.":($("hpnoAutoTranscript").checked?"Automatic transcription is off. Audio uploads with your transcript only; add chapters yourself.":"");
 }
-$("hpmode").onchange=syncMode;syncMode();
+$("hpmode").onchange=syncMode;$("hpnoAutoTranscript").onchange=syncMode;syncMode();
+function captionValue(){return [captionBase,...captionFinal,...(captionInterim?[captionInterim]:[])].filter(Boolean).join("\n")}
+function startCaptions(){
+  stopCaptions(false);
+  if(FEATURES.liveCaptions!==true||!$("hpliveCaption").checked||!CaptionAPI||noAI())return;
+  const status=$("hptranscribeStatus");
+  captionBase=$("hptr").value.trimEnd();captionFinal=[];captionInterim="";
+  const r=new CaptionAPI();r.continuous=true;r.interimResults=true;r.lang="en-US";
+  r.onresult=event=>{
+    let interim="";
+    for(let i=event.resultIndex;i<event.results.length;i++){
+      const result=event.results[i],text=String(result[0]&&result[0].transcript||"").trim();
+      if(!text)continue;
+      if(result.isFinal){captionFinal.push("Host: "+text)}else{interim+=(interim?" ":"")+text}
+    }
+    captionInterim=interim?"Host: "+interim:"";
+    $("hptr").value=captionValue();
+  };
+  r.onerror=event=>{
+    if(event.error==="not-allowed"||event.error==="service-not-allowed"){
+      captionWanted=false;status.textContent="Live captions were blocked. Allow microphone access or turn them off and paste the transcript.";status.dataset.error="true";
+    }else if(event.error!=="no-speech"&&event.error!=="aborted"){
+      status.textContent="Live captions stopped ("+event.error+"). Keep recording and paste the transcript if needed.";status.dataset.error="true";
+    }
+  };
+  r.onend=()=>{if(captionRec===r&&captionWanted){try{r.start()}catch(e){captionWanted=false}}};
+  try{r.start();captionRec=r;captionWanted=true;delete status.dataset.error;status.textContent="Live captions are on. They restart automatically if the browser pauses them."}
+  catch(e){status.textContent="Live captions couldn’t start: "+e.message;status.dataset.error="true"}
+}
+function stopCaptions(keep){
+  captionWanted=false;const r=captionRec;captionRec=null;if(r){try{r.stop()}catch(e){}}
+  if(keep&&(captionFinal.length||captionInterim)){
+    $("hptr").value=captionValue().trim();
+    $("hptranscribeStatus").textContent="Live captions added to the transcript. Review them before publishing.";
+  }
+  captionFinal=[];captionInterim="";
+}
 const msg=t=>{$("hpmsg").textContent=t;if(/failed|couldn.t|error/i.test(t))HOST.notify(t,"error")};
 const fmtT=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
 const elapsed=()=>acc+(rec&&rec.state==="recording"?(Date.now()-t0)/1000:0);
@@ -138,9 +179,9 @@ const studio=Studio.create({
   hasAudio:()=>!!blob,
   getAudio:()=>blob,
   confirm:HOST.confirm,
-  onStart:()=>{clearAudio();$("hppub").disabled=true},
-  onAudio:b=>{const keep=$("hpchapters").value;setAudio(b);$("hpchapters").value=keep;$("hppub").disabled=false},
-  onDiscard:clearAudio,
+  onStart:()=>{stopCaptions(false);clearAudio();startCaptions();$("hppub").disabled=true},
+  onAudio:b=>{stopCaptions(true);const keepChapters=$("hpchapters").value,keepTranscript=$("hptr").value;setAudio(b);$("hpchapters").value=keepChapters;$("hptr").value=keepTranscript;$("hppub").disabled=false},
+  onDiscard:()=>{stopCaptions(false);clearAudio()},
   onMessage:msg,
   onMarker:(t,n)=>{
     const ta=$("hpchapters"),lines=ta.value.split(/\r?\n/).filter(l=>l.trim());lines.push(chapterClock(t)+" Marker "+n);
@@ -164,7 +205,9 @@ $("hpsavedraft").onclick=async()=>{
     const saved=await api({action:"save-draft",by:HOST.who(),draft:{
       id:draftId||undefined,title:$("hptitle").value,unit:$("hpunit").value,date:$("hpdate").value,rant:+$("hprant").value,
       desc:$("hpdesc").value,script:$("hpscript").value,transcript:$("hptr").value,transcriptWords,
-      chapters:$("hpchapters").value,whenLocal:$("hpwhen").value,mode:$("hpmode").value,ideaId:new URLSearchParams(location.search).get("idea"),audio
+      chapters:$("hpchapters").value,whenLocal:$("hpwhen").value,mode:$("hpmode").value,
+      liveCaptions:$("hpliveCaption").checked,skipAutoTranscript:$("hpnoAutoTranscript").checked,
+      ideaId:new URLSearchParams(location.search).get("idea"),audio
     }});
     draftId=saved.draft.id;savedAudioId=saved.draft.audio&&saved.draft.audio.id||null;
     if(blob&&uploadId===savedAudioId)uploadedBlob=blob;
@@ -186,7 +229,10 @@ async function loadDraft(id){
     $("hpdate").value=d.date||new Date().toISOString().slice(0,10);$("hprant").value=String(d.rant||4);
     $("hpdesc").value=d.desc||"";$("hpscript").value=d.script||"";$("hptr").value=d.transcript||"";
     $("hpchapters").value=d.chapters||"";$("hpwhen").value=d.whenLocal||"";
-    $("hpmode").value=d.mode==="plain"?"plain":"ai";syncMode();
+    $("hpmode").value=d.mode==="plain"?"plain":"ai";
+    $("hpnoAutoTranscript").checked=!!d.skipAutoTranscript;
+    if(CaptionAPI)$("hpliveCaption").checked=d.liveCaptions!==false;
+    syncMode();
     transcriptWords=Array.isArray(d.transcriptWords)?d.transcriptWords:[];
     if(d.audio){
       const parts=[];
@@ -256,11 +302,32 @@ async function enhanceAudio(){
 }
 $("hpenhance").onclick=enhanceAudio;
 $("hpsavedraft").hidden=FEATURES.episodeDrafts===false;
+async function loadScriptForRecord(id){
+  if(FEATURES.scriptMaker===false)return;
+  try{
+    const {script}=await api({action:"get-script",id});
+    if(!script)return;
+    $("hpscript").value=script.text||"";
+    if(script.title)$("hptitle").value=script.title;
+    if(UNITS.includes(script.unit))$("hpunit").value=script.unit;
+    if(!$("hpdesc").value.trim()&&script.notes)$("hpdesc").value=script.notes;
+    msg("Script “"+script.title+"” loaded. Edit it before recording.");
+  }catch(e){msg("Couldn’t load that script: "+e.message)}
+}
 loadDraft();
+if(!recordParams.has("draft")&&!recordParams.has("script")&&window.LiveStore){
+  LiveStore.load().then(blob=>{
+    if(!blob)return;
+    setAudio(blob);studio.showFile(blob);LiveStore.clear();
+    msg("Live recording loaded. The intro has been added at the start; review it, then publish or save a draft.");
+  }).catch(()=>{});
+}
+if(recordParams.has("script"))loadScriptForRecord(recordParams.get("script"));
 window.addEventListener("host-route-query",event=>{
   if(event.detail.view!=="record")return;
   const params=new URLSearchParams(event.detail.query||"");
   if(params.has("draft"))loadDraft(params.get("draft"));
+  else if(params.has("script"))loadScriptForRecord(params.get("script"));
   else{
     if(params.has("title"))$("hptitle").value=params.get("title").slice(0,200);
     if(params.has("unit")&&UNITS.includes(params.get("unit")))$("hpunit").value=params.get("unit");
@@ -273,6 +340,50 @@ $("hptranscribe").onclick=async()=>{
   try{const upload=await ensureUploaded();status.textContent="Sending audio to Gemini for transcription...";const result=await api({action:"transcribe",id:upload.id,parts:upload.parts,size:blob.size,type:blob.type});$("hptr").value=result.transcript||"";transcriptWords=Array.isArray(result.words)?result.words:[];status.textContent="Transcript ready. Review it before publishing.";await maybeGenerateChapters();msg(status.textContent)}
   catch(e){status.textContent="Transcription failed: "+e.message;status.dataset.error="true";msg(status.textContent)}
   finally{btn.disabled=false;prog.hidden=true}
+};
+$("hpcleanup").onclick=async()=>{
+  const btn=$("hpcleanup"),status=$("hptranscribeStatus"),box=$("hpcleanupCuts");
+  const transcript=$("hptr").value.trim();
+  if(!transcript){status.textContent="Add or transcribe a transcript first.";status.dataset.error="true";return}
+  btn.disabled=true;delete status.dataset.error;status.textContent="Gemini is cleaning up the transcript…";box.replaceChildren();box.hidden=true;
+  try{
+    const buckets=new Map();
+    for(const word of transcriptWords){
+      const time=Number(word.start),text=String(word.word||"").trim();
+      if(!Number.isFinite(time)||!text)continue;
+      const key=Math.floor(time/15)*15;
+      if(!buckets.has(key))buckets.set(key,[]);
+      buckets.get(key).push(text);
+    }
+    const segments=[...buckets].sort((a,c)=>a[0]-c[0]).map(([time,words])=>({time,text:words.join(" ")}));
+    const duration=editor.hasAudio()?editor.duration():Number.isFinite($("hpprev").duration)&&$("hpprev").duration>0?$("hpprev").duration:Math.max(...transcriptWords.map(w=>Number(w.end)||0),0);
+    const result=await api({action:"cleanup-transcript",transcript,title:$("hptitle").value,unit:$("hpunit").value,duration,introSeconds:editor.introDuration(),segments});
+    $("hptr").value=result.cleaned||transcript;
+    transcriptWords=[];
+    status.textContent=result.cuts&&result.cuts.length?result.cuts.length+" audio cuts suggested. Review them below, then apply the ones you want.":"Clean transcript ready. No safe audio cuts were suggested.";
+    if(!result.cuts||!result.cuts.length){msg(status.textContent);return}
+    const clock=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
+    const rows=result.cuts.map(cut=>{
+      const label=document.createElement("label");label.className="cut-row";
+      const check=document.createElement("input");check.type="checkbox";check.checked=true;check.value=cut.start+"|"+cut.end;
+      const text=document.createElement("span");text.textContent=clock(cut.start)+"–"+clock(cut.end)+" · "+cut.reason;
+      label.append(check,text);return label;
+    });
+    const actions=document.createElement("div");actions.className="acts";
+    const apply=document.createElement("button");apply.type="button";apply.className="go";apply.textContent="Apply checked cuts to audio";
+    apply.onclick=()=>{
+      const ranges=[...box.querySelectorAll("input:checked")].map(input=>{const [start,end]=input.value.split("|").map(Number);return{start,end}});
+      if(!ranges.length){status.textContent="Choose at least one cut first.";return}
+      if(!editor.hasAudio()){status.textContent="Record or import audio before applying cuts.";status.dataset.error="true";return}
+      const count=editor.deleteRanges(ranges);
+      status.textContent=count?count+" cut"+(count===1?"":"s")+" applied to the audio. Review the transcript and chapters.":"Those cuts overlap the locked intro, so nothing was removed.";
+      box.replaceChildren();box.hidden=true;msg(status.textContent);
+    };
+    const clear=document.createElement("button");clear.type="button";clear.textContent="Dismiss";clear.onclick=()=>{box.replaceChildren();box.hidden=true};
+    actions.append(apply,clear);box.append(...rows,actions);box.hidden=false;
+    msg(status.textContent);
+  }catch(e){status.textContent="Transcript cleanup failed: "+e.message;status.dataset.error="true";msg(status.textContent)}
+  finally{btn.disabled=false}
 };
 $("hpscriptGenerate").onclick=async()=>{
   const btn=$("hpscriptGenerate"),status=$("hpscriptStatus"),title=$("hptitle").value.trim();
@@ -337,14 +448,14 @@ $("hppub").onclick=async()=>{
   try{
 msg(skipAI?"Preparing upload (no AI transcription)…":"Preparing upload…");
     const {id,parts}=await ensureUploaded();
-    if(!skipAI&&!transcriptWords.length){
+    if(!skipAI&&!$("hpnoAutoTranscript").checked&&!transcriptWords.length){
       msg("Generating word timings for transcript highlighting…");
       const transcriptResult=await api({action:"transcribe",id,parts,size:blob.size,type:blob.type});
       transcriptWords=Array.isArray(transcriptResult.words)?transcriptResult.words:[];
       if(!$("hptr").value.trim()||audioEdited)$("hptr").value=transcriptResult.transcript||"";
       if(!transcriptWords.length)throw new Error("No word timings were returned. Try transcribing the audio again before publishing.");
     }
-    if(!skipAI&&FEATURES.autoChapters===true&&$("hpautoChapters").checked&&!parseChapterLines().length){
+    if(!skipAI&&!$("hpnoAutoTranscript").checked&&FEATURES.autoChapters===true&&$("hpautoChapters").checked&&!parseChapterLines().length){
       await maybeGenerateChapters();
       if(!parseChapterLines().length)throw new Error("Automatic chapter generation failed. Uncheck the chapter option or add chapters manually, then publish again.");
     }

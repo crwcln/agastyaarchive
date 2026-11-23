@@ -38,7 +38,7 @@ function card(i){
     h("div",{class:"idea-top"},h("div",null,h("h3",null,i.title,fresh(i)?h("span",{class:"badge"},"New"):null),
       h("div",{class:"sub"},byline(i.author)+" · "+ago(i.createdAt)+(i.updatedAt!==i.createdAt?" · updated "+ago(i.updatedAt):""))),sel),
     i.notes?h("p",{class:"notes"},i.notes):null,
-    h("div",{class:"idea-acts"},h("a",{class:"btn go",href:"/host/record.html?idea="+encodeURIComponent(i.id)},"Start episode"),read,del),
+    h("div",{class:"idea-acts"},h("a",{class:"btn go",href:"/host/record.html?idea="+encodeURIComponent(i.id)},"Start episode"),h("a",{class:"btn",href:"/host/#script?idea="+encodeURIComponent(i.id)},"Write script"),h("a",{class:"btn",href:"/host/#live"},"Go live"),read,del),
     h("div",{class:"thread"},...i.comments.map(c=>h("div",{class:"cmt"},h("b",null,c.author.name,h("span",null,c.author.role+" · "+ago(c.at))),h("p",null,c.text))),
       h("div",{class:"cmt-form"},input,h("button",{type:"button",onclick:send},"Send"))));
 }
@@ -94,7 +94,8 @@ $("itGenerate").addEventListener("click",async()=>{
             try{await api({action:"save-idea",title,notes});add.textContent="Added to idea board";$("itMsg").textContent="Generated idea added to the shared board.";load()}
             catch(error){add.disabled=false;status.textContent="Couldn’t add idea: "+error.message}
           }},"Add to idea board"),
-          h("a",{class:"btn",href:"/host/record.html?title="+encodeURIComponent(title)+"&unit="+encodeURIComponent(unit)},"Start episode")));
+          h("a",{class:"btn",href:"/host/record.html?title="+encodeURIComponent(title)+"&unit="+encodeURIComponent(unit)},"Start episode"),
+          h("a",{class:"btn",href:"/host/#script?title="+encodeURIComponent(title)+"&unit="+encodeURIComponent(unit)+"&notes="+encodeURIComponent(notes)},"Write script")));
       results.append(card);
     });
     status.textContent=results.childElementCount?"Here are some starting points. Refine them or add one to the shared board.":"The generator returned no usable ideas.";
