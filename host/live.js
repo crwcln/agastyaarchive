@@ -4,6 +4,7 @@ const {api}=HOST,$=id=>document.getElementById(id),HOST_TOKEN="0".repeat(32);
 let roomId=null,since=0,pollTimer=null,peers=[],peerConns=new Map(),localStream=null,ctx=null,mixDest=null,micNode=null;
 let recorder=null,chunks=[],recBlob=null,recording=false,paused=false,recStart=0,accum=0,clockTimer=null;
 let timerRunning=false,timerSeconds=0,timerBase=0,timerTimer=null,ended=false;
+const seenEvents=new Set();
 const status=t=>{$("lvStatus").textContent=t};
 async function liveApi(body){
   const r=await fetch("/api/live",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":HOST.pw()},body:JSON.stringify(body)});
@@ -89,6 +90,7 @@ async function applySignal(event){
   const data=event.data||{};
   try{
     if(data.type==="answer"){
+      if(entry.pc.signalingState!=="have-local-offer")return;
       await entry.pc.setRemoteDescription(data.sdp);
       for(const candidate of entry.pending.splice(0))await entry.pc.addIceCandidate(candidate).catch(()=>{});
     }else if(data.type==="candidate"){
@@ -99,6 +101,7 @@ async function applySignal(event){
 }
 function processEvents(events){
   for(const event of events){
+    if(event.seq!=null){if(seenEvents.has(event.seq))continue;seenEvents.add(event.seq)}
     if(event.type==="join"){note(event.name+" joined the room.");continue}
     if(event.type==="leave"){disconnectGuest(event.from);note(event.name+" left the room.");continue}
     if(event.type==="signal"&&event.to===HOST_TOKEN){applySignal(event);continue}
@@ -137,7 +140,7 @@ $("lvCreate").onclick=async()=>{
   const btn=$("lvCreate");btn.disabled=true;status("Starting the live room…");
   try{
     const data=await liveApi({action:"create",title:$("lvTitle").value.trim(),by:HOST.who()});
-    roomId=data.room.id;since=0;ended=false;peers=[];recBlob=null;chunks=[];peerConns.forEach(entry=>{try{entry.pc&&entry.pc.close()}catch(e){}});peerConns.clear();
+    roomId=data.room.id;since=0;ended=false;peers=[];recBlob=null;chunks=[];seenEvents.clear();peerConns.forEach(entry=>{try{entry.pc&&entry.pc.close()}catch(e){}});peerConns.clear();
     $("lvLink").value=location.origin+data.guestPath;$("lvInvite").hidden=false;
     $("lvChatLog").replaceChildren();$("lvQuestion").value="";
     controls(true);renderPeers();status("Live room ready. Share the guest link, then start recording.");

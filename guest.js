@@ -2,7 +2,7 @@
 (()=>{
 const $=id=>document.getElementById(id),room=new URLSearchParams(location.search).get("room")||"",HOST_ID="0".repeat(32);
 let peerId="",pc=null,localStream=null,ctx=null,since=0,pollTimer=null,timerRunning=false,timerSeconds=0,timerBase=0,ended=false,muted=false,pendingCandidates=[];
-try{if(sessionStorage.getItem("aa_live_room")===room)peerId=sessionStorage.getItem("aa_live_peer")||""}catch(e){}
+const seenEvents=new Set();
 const status=t=>$("gvStatus").textContent=t;
 const clock=s=>{s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")};
 async function api(body){
@@ -21,12 +21,16 @@ function say(name,text,question){
   row.append(b,document.createTextNode(": "+text));
   $("gvChat").append(row);$("gvChat").scrollTop=$("gvChat").scrollHeight;
 }
-function overlay(text){$("gvOverlayText").textContent=text||"";$("gvOverlay").hidden=!text}
+function overlay(text){
+  const box=$("gvOverlay");$("gvOverlayText").textContent=text||"";box.hidden=!text;
+  if(text){box.style.animation="none";void box.offsetWidth;box.style.animation=""}
+}
 function sendSignal(data){return api({action:"signal",room,from:peerId,to:HOST_ID,data})}
 async function handleSignal(data){
   if(!pc||!data)return;
   try{
     if(data.type==="offer"){
+      if(pc.signalingState!=="stable")return;
       await pc.setRemoteDescription(data.sdp);
       for(const candidate of pendingCandidates.splice(0))await pc.addIceCandidate(candidate).catch(()=>{});
       const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
@@ -64,8 +68,9 @@ function playSfx(name){
   else if(name==="drumroll"){for(let i=0;i<18;i++)noise(.055,.08,180,i*.055)}
 }
 function handleEvent(event){
+  if(event.seq!=null){if(seenEvents.has(event.seq))return;seenEvents.add(event.seq)}
   if(event.type==="signal"&&event.to===peerId){handleSignal(event.data);return}
-  if(event.type==="chat"){say(event.name||"Host",event.text,event.question);return}
+  if(event.type==="chat"){if(event.from===peerId)return;say(event.name||"Host",event.text,event.question);return}
   if(event.type==="sfx"){playSfx(event.sfx);return}
   if(event.type==="question"){overlay(String(event.text||""));return}
   if(event.type==="timer"){timerRunning=!!event.running;timerSeconds=Number(event.seconds)||0;timerBase=Date.now();return}
@@ -110,9 +115,8 @@ $("gvJoin").onclick=async()=>{
   const name=$("gvName").value.trim();if(!name){status("Enter your name first.");return}
   const btn=$("gvJoin");btn.disabled=true;status("Joining…");
   try{
-    const d=await api({action:"join",room,name,token:peerId});
-    peerId=d.peer.id;ended=false;since=0;
-    try{sessionStorage.setItem("aa_live_room",room);sessionStorage.setItem("aa_live_peer",peerId)}catch(e){}
+    const d=await api({action:"join",room,name,token:""});
+    peerId=d.peer.id;ended=false;since=Number(d.since)||0;seenEvents.clear();pendingCandidates=[];
     $("gvTitle").textContent=d.room.title+" · "+d.room.host.name;
     if(d.room.timer){timerRunning=!!d.room.timer.running;timerSeconds=Number(d.room.timer.seconds)||0;timerBase=Date.now()}
     if(d.room.question)overlay(d.room.question);
@@ -140,7 +144,6 @@ $("gvMute").onclick=()=>{
 $("gvLeave").onclick=async()=>{
   if(peerId)api({action:"leave",room,from:peerId}).catch(()=>{});
   endRoom("You left the live show.");peerId="";
-  try{sessionStorage.removeItem("aa_live_peer");sessionStorage.removeItem("aa_live_room")}catch(e){}
 };
 window.addEventListener("pagehide",()=>{if(peerId&&!ended)fetch("/api/live",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"leave",room,from:peerId}),keepalive:true}).catch(()=>{})});
 setInterval(()=>{$("gvTimer").textContent=clock(timerSeconds+(timerRunning?(Date.now()-timerBase)/1000:0))},250);

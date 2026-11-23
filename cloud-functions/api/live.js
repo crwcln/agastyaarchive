@@ -23,6 +23,7 @@ const peersOf = async id => {
   const { blobs } = await store.list({ prefix: peersPrefix(id), consistency: "strong" });
   return (await Promise.all(blobs.slice(0, 30).map(item => store.get(item.key, { type: "json", consistency: "strong" }).catch(() => null)))).filter(Boolean);
 };
+const eventCursor = async id => { const log = await store.get(eventsKey(id), { type: "json" }).catch(() => null); return log && log.next ? log.next - 1 : 0; };
 async function addEvent(id, event) {
   const key = eventsKey(id), data = (await store.get(key, { type: "json" }).catch(() => null)) || { next: 1, items: [] };
   const item = { ...event, seq: data.next++, at: new Date().toISOString() };
@@ -65,7 +66,7 @@ export async function handle(context) {
     peer.name = name;peer.lastSeen = new Date().toISOString();
     await store.setJSON(peerKey(id, token), peer);
     await addEvent(id, { type: "join", from: token, name });
-    return json({ room: publicRoom(room), peer: { id: token, name } });
+    return json({ room: publicRoom(room), peer: { id: token, name }, since: await eventCursor(id) });
   }
 
   if (action === "poll" || action === "signal" || action === "chat" || action === "leave") {
