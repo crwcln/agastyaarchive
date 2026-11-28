@@ -62,7 +62,6 @@ function create(opts){
     for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3)}return b}
   async function openMic(){
     if(open)return;
-    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error("Microphone access isn’t available here. Open the site over HTTPS in a browser that allows microphone access.");
     stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:ec,noiseSuppression:ns,autoGainControl:false,...(devId?{deviceId:{exact:devId}}:{})}});
     const AC=window.AudioContext||window.webkitAudioContext;ctx=new AC();if(ctx.resume)await ctx.resume();
     const bq=o=>{const f=ctx.createBiquadFilter();f.type=o.type;if(o.frequency!=null)f.frequency.value=o.frequency;if(o.Q!=null)f.Q.value=o.Q;return f},n=nodes={};
@@ -168,7 +167,6 @@ function create(opts){
   /* ---------- recording ---------- */
   async function start(){
     if(recording||clip)return;
-    if(!window.MediaRecorder){opts.onMessage&&opts.onMessage("This browser can’t record audio. Import an audio file instead.");return}
     if(mode==="review"&&opts.hasAudio&&opts.hasAudio()&&!(await (opts.confirm?opts.confirm("Replace the current audio? This can’t be undone.","Replace recording"):Promise.resolve(window.confirm("Replace the current audio? This can’t be undone.")))))return;
     audio.pause();
     try{await openMic()}catch(e){opts.onMessage&&opts.onMessage("Mic blocked or unavailable: "+e.message);return}
@@ -176,7 +174,7 @@ function create(opts){
     rec=new MediaRecorder(nodes.dest.stream,{...(mt?{mimeType:mt}:{}),audioBitsPerSecond:48000});
     chunks=[];hist=[];markers=[];peaks=null;selection=null;undoStack=[];redoStack=[];acc=0;mode="idle";if(opts.editor)opts.editor.reset();
     rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);rec.onstop=finish;
-    rec.start(1000);recording=true;paused=false;t0=performance.now();nextBar=t0;
+    rec.start(1000);recording=true;paused=false;t0=performance.now();nextBar=t0;opts.onRecState&&opts.onRecState("start");
     opts.onStart&&opts.onStart();el.time.textContent=clockT(0);el.total.textContent="";ui();
   }
   function stop(){if(!recording)return;acc=elapsed();if(rec.state!=="inactive")rec.stop()}
@@ -184,6 +182,7 @@ function create(opts){
     const b=new Blob(chunks,{type:(rec&&rec.mimeType)||mime||"audio/webm"}),dur=acc;
     recording=false;paused=false;checking=false;closeMic();
     mode="review";peaks=hist.slice();curDur=dur;
+    opts.onRecState&&opts.onRecState("stop");
     opts.onAudio&&opts.onAudio(b);
     if(opts.editor)opts.editor.load(b);
     audio.addEventListener("loadedmetadata",fixDur,{once:true});
@@ -193,7 +192,7 @@ function create(opts){
     if(audio.duration===Infinity){const f=()=>{audio.removeEventListener("timeupdate",f);audio.currentTime=0};audio.addEventListener("timeupdate",f);audio.currentTime=1e101}
   }
   el.start.onclick=()=>recording?stop():start();
-  el.pause.onclick=()=>{if(!recording)return;if(!paused){acc=elapsed();rec.pause();paused=true}else{t0=performance.now();nextBar=t0;rec.resume();paused=false}ui()};
+  el.pause.onclick=()=>{if(!recording)return;if(!paused){acc=elapsed();rec.pause();paused=true;opts.onRecState&&opts.onRecState("pause")}else{t0=performance.now();nextBar=t0;rec.resume();paused=false;opts.onRecState&&opts.onRecState("resume")}ui()};
   el.check.onclick=()=>{if(recording)return;if(open){checking=false;closeMic()}else{checking=true;openMic().catch(e=>{checking=false;opts.onMessage&&opts.onMessage("Mic blocked or unavailable: "+e.message)})}};
   el.mark.onclick=()=>{
     const t=recording?elapsed():(opts.editor?opts.editor.playhead():cur());markers.push({t});opts.onMarker&&opts.onMarker(t,markers.length);
@@ -250,7 +249,6 @@ function create(opts){
   /* ---------- punch-in: record a short clip through the same filters, for the editor ---------- */
   async function recordClip(){
     if(recording||clip)throw new Error("Already recording.");
-    if(!window.MediaRecorder)throw new Error("This browser can’t record audio.");
     const wasOpen=open;
     await openMic();
     const mt=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||"",
@@ -266,7 +264,7 @@ function create(opts){
     };
   }
   ui();draw();
-  return{reset,showFile,recordClip};
+  return{reset,showFile,recordClip,recordTime:()=>elapsed()};
 }
 return{create};
 })();

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Join the recording · The Agastya Archive</title>
+<meta name="robots" content="noindex,nofollow">
+<script src="/site-config.js"></script>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900&family=Space+Grotesk:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="/join/join.css">
+</head>
+<body>
+<main id="jn">
+  <section id="stepName" class="jcard">
+    <img src="/logo.svg" alt="" class="jlogo"><h1>Join the recording</h1>
+    <p class="jmute" id="jIntro">You’ve been invited to record a podcast episode with The Agastya Archive.</p>
+    <label for="jName">Your name</label><input id="jName" maxlength="40" autocomplete="nickname" placeholder="e.g. Maya">
+    <label for="jCode">Room code</label><input id="jCode" maxlength="6" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABC123">
+    <p class="jfine">Please wear headphones so your guests don’t hear an echo. Your browser will ask to use your microphone. The host decides when to let you in.</p>
+    <button id="jJoin" class="go" type="button">Join</button><p id="jErr" class="jerr" role="alert"></p>
+  </section>
+  <section id="stepWait" class="jcard" hidden><div class="jspin"></div><h1>Waiting for the host</h1><p class="jmute">You’re in the waiting room. The host will let you in shortly. Keep this page open.</p><button id="jCancel" type="button">Leave</button></section>
+  <section id="stepDone" class="jcard" hidden><h1 id="jDoneTitle">You left the room</h1><p class="jmute" id="jDoneText">Thanks for joining.</p></section>
+  <section id="stepRoom" hidden>
+    <header class="jbar"><div><b id="jTitle">Live recording</b><span class="jfine" id="jHost"></span></div><div class="jrec" id="jRec">STANDBY</div><div class="jclock" id="jClock">0:00</div><button id="jLeave" type="button">Leave</button></header>
+    <div id="jNotice" class="jnotice" hidden></div>
+    <div id="jQuestion" class="jquestion" hidden><small>On screen</small><div id="jQText"></div></div>
+    <div id="jTimer" class="jtimer" hidden></div>
+    <div class="jgrid">
+      <section class="jcard"><h2>In the room</h2><ul id="jPeople" class="jpeople"></ul>
+        <div class="jmic"><button id="jMute" type="button">Mute my mic</button><div class="jmeter" aria-label="Your microphone level"><i id="jLevel"></i></div></div><p class="jfine" id="jConn">Connecting…</p></section>
+      <section class="jcard jchat"><h2>Chat</h2><div id="jLog" class="jlog" aria-live="polite"></div>
+        <div class="jsend"><input id="jMsg" maxlength="400" placeholder="Message everyone" aria-label="Chat message"><button id="jSend" type="button">Send</button></div></section>
+    </div>
+  </section>
+  <audio id="jAudio" autoplay playsinline></audio>
+</main>
+<script src="/join/join.js"></script>
+</body></html>

@@ -12,42 +12,26 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function create(opts){
   opts=opts||{};
   const E=Object.fromEntries(["aeditor","aecanvas","aemini","aeview","aeplay","aeplaysel","aepreview","aesel","aezout","aezfit","aezin","aedelete","aecut","aecopy","aepaste","aetrim","aerec","aerecsel",
-    "aefile","aefilesel","aefilesellab","aepre","aesilence","aeinsil","aefadein","aefadeout","aegain","aenorm","aepauses","aeintro","aeundo","aeredo","aerevert","aeparams","aerecbar","aerectime","aerectext","hpenhance",
-    "aerecstop","aereccancel","aebusy","aebusytext","aestatus","aeapply","hptime","sttotal"].map(id=>[id,byId(id)||document.createElement("div")]));
+    "aefile","aefilesel","aefilesellab","aepre","aesilence","aeinsil","aefadein","aefadeout","aegain","aenorm","aepauses","aeundo","aeredo","aerevert","aeparams","aerecbar","aerectime","aerectext",
+    "aerecstop","aereccancel","aebusy","aebusytext","aestatus","aeapply","hptime","sttotal","aeintro","aeintrorm","aeintroauto","aeai"].map(id=>[id,byId(id)||document.createElement("div")]));
   const box=E.aeditor,cv=E.aecanvas,mini=E.aemini;
-  let sources=[],segs=[],origSig="",renderedSig="",blobCurrent=null,clipSegs=null,sel=null,head=0,pps=60,scroll=0,ver=0;
+  let introSrc=null,nextIntro=0,sources=[],segs=[],origSig="",renderedSig="",blobCurrent=null,clipSegs=null,sel=null,head=0,pps=60,scroll=0,ver=0;
   let undoS=[],redoS=[],play=null,recCtl=null,recMode=null,recTimer=0,drag=null,miniCache=null,token=0,failed=false,busyFlag=false,raf=0,drawQueued=false;
-  let introBuf=null,introLoading=null,introLen=0;
 
   /* ---------- model ---------- */
-  const introUrl=opts.introUrl||"/mfcc-jazz-restaurant-cafe-616067.mp3";
-  const hasIntro=()=>introLen>0;
-  const introOverlap=(a,b)=>introLen>0&&a<introLen&&b>0;
-  const blockIntro=(a,b)=>{if(!introOverlap(a,b))return false;opts.notify&&opts.notify("The intro is locked at the start of the episode. You can’t record, insert or cut audio over it.","error");return true};
-  async function introBuffer(){
-    if(introBuf)return introBuf;
-    if(!introLoading)introLoading=(async()=>{
-      const response=await fetch(introUrl);
-      if(!response.ok)throw new Error("the intro audio could not be loaded (HTTP "+response.status+")");
-      introBuf=await decodeBlob(await response.blob());return introBuf;
-    })().finally(()=>{introLoading=null});
-    return introLoading;
-  }
-  function introSegment(){
-    if(!introBuf)return null;
-    return{s:addSource(introBuf),a:0,b:introBuf.length,g:1,intro:true};
-  }
   const total=()=>segs.reduce((n,s)=>n+(s.b-s.a),0);
   const sig=()=>JSON.stringify(segs);
   const ready=()=>segs.length>0&&!failed&&!busyFlag;
-  const snapshot=()=>({segs:segs.map(s=>({...s})),sel:sel&&{...sel},head,chapters:opts.getChapters?opts.getChapters():null});
+  const snapshot=()=>({segs:segs.map(s=>({...s})),sel:sel&&{...sel},head,aux:opts.getAux?opts.getAux():null});
   const remember=()=>{undoS.push(snapshot());if(undoS.length>100)undoS.shift();redoS=[]};
   const emit=op=>{if(opts.onEdit)opts.onEdit(op)};
   function addSource(buf){
-    const data=buf.getChannelData(0),n=data.length,np=Math.ceil(n/BLOCK),peaks=new Float32Array(np);
-    for(let k=0;k<np;k++){let m=0;const e=Math.min(n,(k+1)*BLOCK);for(let i=k*BLOCK;i<e;i++){const v=data[i]<0?-data[i]:data[i];if(v>m)m=v}peaks[k]=m}
-    sources.push({buf,data,peaks});return sources.length-1;
+    const data=buf.getChannelData(0),n=data.length,r=buf.sampleRate/SR,bs=Math.max(1,Math.round(BLOCK*r)),np=Math.ceil(n/bs),peaks=new Float32Array(np);
+    for(let k=0;k<np;k++){let m=0;const e=Math.min(n,(k+1)*bs);for(let i=k*bs;i<e;i++){const v=data[i]<0?-data[i]:data[i];if(v>m)m=v}peaks[k]=m}
+    sources.push({buf,data,peaks,r});return sources.length-1;
   }
+  const lockedLen=()=>segs.reduce((n,s)=>n+(s.lock?s.b-s.a:0),0),hasIntro=()=>segs.some(s=>s.lock);
+  const sampleAt=(src,t)=>{const i=Math.floor(t*src.r);return i<src.data.length?src.data[i]:0};
   function splitAt(pos){ // make sure a segment boundary exists at timeline sample pos; returns the index of the segment that starts there
     let t=0;
     for(let i=0;i<segs.length;i++){
@@ -58,16 +42,16 @@ function create(opts){
     }
     return segs.length;
   }
-  function removeRange(a,b){const i=splitAt(a),j=splitAt(b);for(let k=i;k<j;k++)if(segs[k]&&!segs[k].intro)segs[k]=null;segs=segs.filter(Boolean)}
-  function insertSegs(pos,list){if(hasIntro()&&pos<introLen)return false;const i=splitAt(pos);segs.splice(i,0,...list.map(s=>({...s})));return true}
+  function removeRange(a,b){const i=splitAt(a),j=splitAt(b);segs.splice(i,j-i)}
+  function insertSegs(pos,list){const i=splitAt(pos);segs.splice(i,0,...list.map(s=>({...s})))}
   function extract(a,b){const out=[];let pos=0;for(const s of segs){const len=s.b-s.a,sa=Math.max(a,pos),sb=Math.min(b,pos+len);if(sb>sa)out.push({...s,a:s.a+(sa-pos),b:s.a+(sb-pos)});pos+=len;if(pos>=b)break}return out}
   function compact(){const out=[];for(const s of segs){if(s.b<=s.a)continue;const p=out[out.length-1];
     if(p&&p.s===s.s&&(p.g||1)===(s.g||1)&&(s.s<0||p.b===s.a)){if(s.s<0){p.b+=s.b-s.a}else p.b=s.b}else out.push({...s})}segs=out}
   function peakOf(a,b){let pos=0,m=0;for(const s of segs){const len=s.b-s.a,sa=Math.max(a,pos),sb=Math.min(b,pos+len);
-    if(sb>sa&&s.s>=0){const d=sources[s.s].data,g=s.g||1,o=s.a-pos;for(let i=sa+o;i<sb+o;i++){const v=(d[i]<0?-d[i]:d[i])*g;if(v>m)m=v}}pos+=len;if(pos>=b)break}return m}
+    if(sb>sa&&s.s>=0){const src=sources[s.s],g=s.g||1;for(let t=sa;t<sb;t++){const x=sampleAt(src,s.a+(t-pos)),v=(x<0?-x:x)*g;if(v>m)m=v}}pos+=len;if(pos>=b)break}return m}
   function processRange(a,b,fn){ // copy a (short) region into a new source, run fn over it, and drop it back in place
     const n=b-a,buf=new AudioBuffer({length:n,sampleRate:SR,numberOfChannels:1}),out=buf.getChannelData(0);let o=0;
-    for(const s of extract(a,b)){const len=s.b-s.a;if(s.s>=0){const d=sources[s.s].data,g=s.g||1;for(let i=s.a;i<s.b;i++)out[o++]=d[i]*g}else o+=len}
+    for(const s of extract(a,b)){const len=s.b-s.a;if(s.s>=0){const src=sources[s.s],g=s.g||1;for(let i=0;i<len;i++)out[o++]=sampleAt(src,s.a+i)*g}else o+=len}
     fn(out,n);const si=addSource(buf);removeRange(a,b);insertSegs(a,[{s:si,a:0,b:n,g:1}]);
   }
   function findPauses(thr,minLen){
@@ -87,9 +71,9 @@ function create(opts){
   }
 
   /* ---------- decoding / loading ---------- */
-  async function decodeBlob(blob){
+  async function decodeBlob(blob,rate=SR){
     if(blob.size>MAX_FILE)throw new Error("this file is too large to edit in the browser (limit "+Math.round(MAX_FILE/1e6)+" MB)");
-    const AC=window.OfflineAudioContext||window.webkitOfflineAudioContext,ctx=new AC(1,1,SR),ab=await blob.arrayBuffer();
+    const AC=window.OfflineAudioContext||window.webkitOfflineAudioContext,ctx=new AC(1,1,rate),ab=await blob.arrayBuffer();
     let dec=await new Promise((res,rej)=>{const p=ctx.decodeAudioData(ab,res,rej);if(p&&p.then)p.then(res,rej)});
     if(dec.numberOfChannels>1){
       const out=new AudioBuffer({length:dec.length,sampleRate:dec.sampleRate,numberOfChannels:1}),o=out.getChannelData(0),chs=[];
@@ -97,25 +81,23 @@ function create(opts){
       for(let i=0;i<dec.length;i++){let v=0;for(let c=0;c<chs.length;c++)v+=chs[c][i];o[i]=v/chs.length}
       dec=out;
     }
-    if(Math.abs(dec.sampleRate-SR)>1){const off=new AC(1,Math.max(1,Math.ceil(dec.duration*SR)),SR),src=off.createBufferSource();src.buffer=dec;src.connect(off.destination);src.start();dec=await off.startRendering()}
+    if(Math.abs(dec.sampleRate-rate)>1){const off=new AC(1,Math.max(1,Math.ceil(dec.duration*rate)),rate),src=off.createBufferSource();src.buffer=dec;src.connect(off.destination);src.start();dec=await off.startRendering()}
     return dec;
   }
   function busy(on,text){busyFlag=on;E.aebusy.hidden=!on;if(text)E.aebusytext.textContent=text;ui()}
   function say(t){E.aestatus.textContent=t}
-  async function load(blob){
+  async function load(blob,loadOpts){
     reset();box.hidden=false;const my=++token;failed=false;busy(true,"Preparing the editor…");
     try{
       const buf=await decodeBlob(blob);if(my!==token)return;
-      sources=[];segs=[];introLen=0;
-      let intro=null;
-      try{await introBuffer();intro=introSegment()}catch(e){}
-      if(my!==token)return;
-      const si=addSource(buf);
-      segs=intro?[intro,{s:si,a:0,b:buf.length,g:1}]:[{s:si,a:0,b:buf.length,g:1}];
-      introLen=intro?intro.b:0;
-      origSig=sig();renderedSig=intro?"":origSig;blobCurrent=blob;
+      sources=[];const si=addSource(buf);let next=[{s:si,a:0,b:buf.length,g:1}];
+      const keep=Math.round(((loadOpts&&loadOpts.introSeconds)||nextIntro||0)*SR);nextIntro=0;
+      if(keep>0&&keep<buf.length){ // this file already starts with the intro: lock it, and swap in the pristine intro audio
+        let n=keep,isi=null;try{const ib=await getIntroBuffer();if(my!==token)return;isi=addSource(ib);n=Math.round(ib.length/sources[isi].r)}catch(e){}
+        if(isi!=null&&n<buf.length)next=[{s:isi,a:0,b:n,g:1,lock:true},{s:si,a:n,b:buf.length,g:1}];else next=[{s:si,a:0,b:keep,g:1,lock:true},{s:si,a:keep,b:buf.length,g:1}];
+      }
+      segs=next;origSig=sig();renderedSig=origSig;blobCurrent=blob;
       undoS=[];redoS=[];sel=null;head=0;ver++;fit();
-      if(intro)emit({type:"insert",at:0,len:introLen/SR});
     }catch(e){
       if(my!==token)return;failed=true;segs=[];blobCurrent=blob;
       say("This audio couldn’t be opened for editing ("+(e&&e.message||"unsupported format")+"). It will be published exactly as it is.");
@@ -125,57 +107,8 @@ function create(opts){
   }
   function reset(){
     token++;stopPlay();if(recCtl){try{recCtl.cancel()}catch(e){}recCtl=null;recMode=null;clearInterval(recTimer);E.aerecbar.hidden=true}
-    sources=[];segs=[];origSig=renderedSig="";blobCurrent=null;clipSegs=null;sel=null;head=0;undoS=[];redoS=[];failed=false;miniCache=null;introLen=0;ver++;
+    sources=[];segs=[];origSig=renderedSig="";blobCurrent=null;clipSegs=null;sel=null;head=0;undoS=[];redoS=[];failed=false;miniCache=null;ver++;
     box.hidden=true;E.aeparams.hidden=true;E.aebusy.hidden=true;busyFlag=false;ui();
-  }
-  async function replaceAudio(blob,opts){ // swap in an AI-enhanced copy while keeping undo history and the length-based transcript
-    const my=++token;busy(true,"Opening the enhanced audio…");
-    try{
-      const buf=await decodeBlob(blob);if(my!==token)return false;
-      stopPlay();remember();
-      sources=[];segs=[];introLen=0;
-      let intro=null;
-      try{await introBuffer();intro=introSegment()}catch(e){}
-      const si=addSource(buf);
-      segs=intro?[intro,{s:si,a:0,b:buf.length,g:1}]:[{s:si,a:0,b:buf.length,g:1}];
-      introLen=intro?intro.b:0;
-      const s=sig();renderedSig=opts&&opts.rendered&&!intro?s:"";blobCurrent=blob;sel=null;head=0;failed=false;miniCache=null;ver++;
-      box.hidden=false;fit();
-    }catch(e){
-      if(my!==token)return false;
-      throw new Error("The enhanced audio couldn’t be opened ("+(e&&e.message||"unsupported format")+").");
-    }finally{if(my===token)busy(false)}
-    if(my!==token)return false;
-    refreshStatus("Enhanced audio ready. Review it, then publish or save a draft.");redraw();return true;
-  }
-  async function insertIntro(){
-    if(!segs.length||failed||busyFlag||recCtl)return;
-    if(hasIntro()){opts.notify&&opts.notify("The intro is already at the beginning.","success");return}
-    busy(true,"Adding the intro…");
-    try{
-      const ib=await introBuffer();
-      if(!segs.length||failed)return;
-      stopPlay();
-      commit(()=>{
-        const seg=introSegment();if(!seg)return;
-        introLen=seg.b;insertSegs(0,[seg]);emit({type:"insert",at:0,len:seg.b/SR});sel=null;head=introLen;
-      },"Intro added at the beginning. It is locked so nothing can play over it.");
-      opts.notify&&opts.notify("Intro inserted and locked at the beginning.","success");
-    }catch(e){opts.notify&&opts.notify("Couldn’t insert the intro: "+(e&&e.message||e),"error")}
-    finally{busy(false)}
-  }
-  function deleteRanges(list){
-    if(!segs.length||failed||busyFlag||recCtl)return 0;
-    const T=total(),ranges=(Array.isArray(list)?list:[]).map(r=>({a:clamp(Math.round(Number(r&&r.start)*SR),0,T),b:clamp(Math.round(Number(r&&r.end)*SR),0,T)}))
-      .filter(r=>r.b>r.a&&r.b-r.a<T&&!introOverlap(r.a,r.b)).sort((a,b)=>b.a-a.a);
-    if(!ranges.length)return 0;
-    stopPlay();
-    let removed=0,count=0;
-    commit(()=>{
-      for(const r of ranges){const len=r.b-r.a;if(len<=0||introOverlap(r.a,r.b))continue;removeRange(r.a,r.b);emit({type:"delete",at:r.a/SR,len:len/SR});removed+=len;count++}
-      sel=null;head=clamp(head,0,total());
-    },()=>"Removed "+count+" suggested part"+(count===1?"":"s")+" ("+(removed/SR).toFixed(1)+" s).");
-    return count;
   }
 
   /* ---------- view ---------- */
@@ -225,10 +158,15 @@ function create(opts){
       const x=i*bw,t=t0+(i+.5)*bw/pps;if(t>D)break;
       const h=Math.max(1.5,amp(pk[i])*room*2);
       const inSel=sel&&x+bw>sampleToX(sel.a)&&x<sampleToX(sel.b),played=play&&t*SR<head;
-      g.fillStyle=t*SR<introLen?"#e0b04a":inSel?"#ffe08a":played?"#b6a04e":"rgba(241,231,211,.62)";g.fillRect(x,mid-h/2,bw-1,h);
+      g.fillStyle=inSel?"#ffe08a":played?"#e0b04a":"rgba(241,231,211,.62)";g.fillRect(x,mid-h/2,bw-1,h);
     }
     // end of audio
     const ex=sampleToX(total());if(ex<W){g.fillStyle="rgba(0,0,0,.35)";g.fillRect(Math.max(0,ex),RULER,W,H);g.fillStyle="rgba(241,231,211,.35)";g.fillRect(ex,RULER,1,H)}
+    // locked intro
+    const L=lockedLen();if(L){const x0=sampleToX(0),x1=sampleToX(L);g.fillStyle="rgba(224,176,74,.10)";g.fillRect(Math.max(0,x0),RULER,Math.max(0,Math.min(W,x1)-Math.max(0,x0)),H-RULER);
+      g.fillStyle="#e0b04a";g.fillRect(x1-1,RULER,2,H-RULER);if(x1>70){g.font="bold 10px 'Space Grotesk',sans-serif";g.fillText("INTRO · LOCKED",Math.max(6,x0+6),RULER+4);g.font="10px 'Space Grotesk',sans-serif"}}
+    // AI suggestions
+    for(const m of marks){const x0=sampleToX(Math.round(m.a*SR)),x1=sampleToX(Math.round(m.b*SR));if(x1<0||x0>W)continue;g.fillStyle="rgba(255,69,58,.22)";g.fillRect(x0,RULER,Math.max(2,x1-x0),H-RULER);g.fillStyle="#ff453a";g.fillRect(x0,RULER,1.5,H-RULER);g.fillRect(x1-1,RULER,1.5,H-RULER)}
     // selection
     if(sel){const ax=sampleToX(sel.a),bx=sampleToX(sel.b);g.fillStyle="rgba(224,176,74,.16)";g.fillRect(ax,RULER,bx-ax,H-RULER);g.fillStyle="#e0b04a";g.fillRect(ax-1,RULER,2,H-RULER);g.fillRect(bx-1,RULER,2,H-RULER);g.fillRect(ax-4,RULER,8,10);g.fillRect(bx-4,RULER,8,10)}
     // playhead
@@ -254,23 +192,52 @@ function create(opts){
     play.nodes.forEach(n=>{try{n.onended=null;n.stop()}catch(e){}});try{play.ctx.close()}catch(e){}
     play=null;ui();
   }
-  function startPlay(ranges,endHead){
-    stopPlay();if(!ready())return;
-    const AC=window.AudioContext||window.webkitAudioContext,ctx=new AC(),nodes=[],t=ctx.currentTime+.06;
-    let off=0;
+  function schedule(ctx,ranges,out){ // queue the edit list on an audio context, back to back, straight from the source audio
+    const nodes=[],t=ctx.currentTime+.06;let off=0;
     for(const [from,to] of ranges){
       let pos=0;
       for(const s of segs){
         const len=s.b-s.a,sa=Math.max(from,pos),sb=Math.min(to,pos+len);
         if(sb>sa&&s.s>=0){
           const n=ctx.createBufferSource();n.buffer=sources[s.s].buf;
-          if(s.g&&s.g!==1){const gn=ctx.createGain();gn.gain.value=s.g;n.connect(gn);gn.connect(ctx.destination)}else n.connect(ctx.destination);
+          if(s.g&&s.g!==1){const gn=ctx.createGain();gn.gain.value=s.g;n.connect(gn);gn.connect(out)}else n.connect(out);
           n.start(t+off+(sa-from)/SR,(s.a+(sa-pos))/SR,(sb-sa)/SR);nodes.push(n);
         }
         pos+=len;if(pos>=to)break;
       }
       off+=(to-from)/SR;
     }
+    return{nodes,t0:t};
+  }
+  function snapQuiet(t,radius){ // move a cut point to the quietest nearby moment so it lands between words
+    if(!segs.length)return t;const n=Math.max(8,Math.round(radius*2*SR/BLOCK)),t0=Math.max(0,t-radius),t1=Math.min(dur(),t+radius);
+    if(t1<=t0)return t;const pk=colPeaks(t0,t1,n);let best=-1,bv=Infinity;
+    for(let i=0;i<n;i++){const v=pk[i]+Math.abs((t0+(i+.5)*(t1-t0)/n)-t)*.004;if(v<bv){bv=v;best=i}}
+    return best<0?t:t0+(best+.5)*(t1-t0)/n;
+  }
+  function applyCuts(ranges,label){ // several deletions as ONE undoable step (positions in seconds)
+    const L=lockedLen(),list=ranges.map(r=>({a:Math.max(L,Math.round(r.a*SR)),b:Math.min(total(),Math.round(r.b*SR))})).filter(r=>r.b-r.a>=SR*.05).sort((x,y)=>y.a-x.a);
+    if(!list.length||!need())return 0;let removed=0;stopPlay();
+    commit(()=>{for(const r of list){removeRange(r.a,r.b);emit({type:"delete",at:r.a/SR,len:(r.b-r.a)/SR});removed+=r.b-r.a}sel=null;head=Math.min(head,total())},()=>(label||"Applied the cuts.")+" Removed "+(removed/SR).toFixed(1)+" s.");
+    return removed/SR;
+  }
+  function previewRange(a,b){ // hear a little either side of a cut, as if it had already been made
+    if(!ready()||recCtl)return;const lead=Math.round(1.5*SR),T=total(),x=Math.round(a*SR),y=Math.round(b*SR),r=[];
+    if(x>0)r.push([Math.max(0,x-lead),x]);if(y<T)r.push([y,Math.min(T,y+lead)]);if(r.length)startPlay(r,x);
+  }
+  function goTo(t){head=clamp(Math.round(t*SR),0,total());const v=vis();scroll=Math.max(0,head/SR-v*.3);clampScroll();ui();draw()}
+  let marks=[];function setHighlights(list){marks=list||[];draw()}
+  function captionStream(fromSec,toSec){ // plays the timeline, silently and in real time, into an audio track the speech recognizer can listen to
+    if(!ready())throw new Error("There’s no audio to caption.");
+    const AC=window.AudioContext||window.webkitAudioContext,ctx=new AC(),dest=ctx.createMediaStreamDestination(),from=Math.round(fromSec*SR),to=Math.min(total(),Math.round(toSec*SR));
+    const {nodes,t0}=schedule(ctx,[[from,to]],dest);let stopped=false,finish;const done=new Promise(r=>finish=r);
+    const stop=()=>{if(stopped)return;stopped=true;nodes.forEach(n=>{try{n.onended=null;n.stop()}catch(e){}});try{ctx.close()}catch(e){}finish()};
+    if(nodes.length)nodes[nodes.length-1].onended=()=>setTimeout(stop,500);else setTimeout(stop,0);
+    return{track:dest.stream.getAudioTracks()[0],time:()=>Math.max(0,ctx.currentTime-t0)+from/SR,stop,done,duration:(to-from)/SR};
+  }
+  function startPlay(ranges,endHead){
+    stopPlay();if(!ready())return;
+    const AC=window.AudioContext||window.webkitAudioContext,ctx=new AC(),{nodes,t0:t}=schedule(ctx,ranges,ctx.destination);
     play={ctx,nodes,ranges,t0:t,endHead,raf:0};ui();
     const loop=()=>{
       if(!play)return;
@@ -295,8 +262,13 @@ function create(opts){
   }
 
   /* ---------- edits ---------- */
-  function commit(fn,message){
-    remember();fn();compact();ver++;miniCache=null;
+  function lockIntact(len){let n=0,i=0;while(i<segs.length&&segs[i].lock){n+=segs[i].b-segs[i].a;i++}return n===len&&!segs.slice(i).some(s=>s.lock)}
+  function commit(fn,message,flags){
+    const L0=lockedLen();remember();fn();compact();
+    if(!(flags&&flags.allowLock)&&!lockIntact(L0)){ // nothing may edit, cover or be placed over the intro
+      restore(undoS.pop());opts.notify&&opts.notify("The intro is locked, so that edit was cancelled. Use Remove intro if you really want to change it.","error");return;
+    }
+    ver++;miniCache=null;
     const T=total();if(sel&&(sel.b>T||sel.a>=T))sel=null;head=clamp(head,0,T);
     clampScroll();refreshStatus(typeof message==="function"?message():message);ui();draw();opts.onChange&&opts.onChange();
   }
@@ -308,35 +280,32 @@ function create(opts){
   const need=()=>ready()&&!recCtl;
   function doDelete(){
     if(!sel||!need())return;const a=sel.a,b=sel.b;
-    if(blockIntro(a,b))return;
     if(b-a>=total()){opts.notify&&opts.notify("You can’t delete everything. Use Discard & re-record instead.","error");return}
     stopPlay();commit(()=>{removeRange(a,b);sel=null;head=a;emit({type:"delete",at:a/SR,len:(b-a)/SR})},"Deleted "+((b-a)/SR).toFixed(1)+" s.");
   }
-  function doCopy(){if(!sel||!need())return;if(blockIntro(sel.a,sel.b))return;clipSegs=extract(sel.a,sel.b);ui();say("Copied "+((sel.b-sel.a)/SR).toFixed(1)+" s. Move the playhead and press Paste.")}
+  function doCopy(){if(!sel||!need())return;clipSegs=extract(sel.a,sel.b);ui();say("Copied "+((sel.b-sel.a)/SR).toFixed(1)+" s. Move the playhead and press Paste.")}
   function doCut(){if(!sel||!need())return;clipSegs=extract(sel.a,sel.b);doDelete()}
   function insertAt(list,message){ // replaces the selection if there is one, otherwise inserts at the playhead
     const n=list.reduce((t,s)=>t+(s.b-s.a),0);
-    if(blockIntro(sel?sel.a:head,(sel?sel.b:head)+Math.max(1,n)))return;
     commit(()=>{
-      let at=head;
+      let at=Math.max(head,lockedLen());
       if(sel){const a=sel.a,b=sel.b;removeRange(a,b);emit({type:"delete",at:a/SR,len:(b-a)/SR});at=a}
       insertSegs(at,list);emit({type:"insert",at:at/SR,len:n/SR});sel={a:at,b:at+n};head=at+n;
     },message);
   }
   function doPaste(){if(!clipSegs||!need())return;stopPlay();insertAt(clipSegs,"Pasted "+(clipSegs.reduce((t,s)=>t+(s.b-s.a),0)/SR).toFixed(1)+" s.")}
   function doTrim(){
-    if(!sel||!need())return;const a=sel.a,b=sel.b,T=total();stopPlay();
-    commit(()=>{if(b<T){removeRange(b,T);emit({type:"delete",at:b/SR,len:(T-b)/SR})}if(a>0){removeRange(0,a);emit({type:"delete",at:0,len:a/SR})}sel=null;head=0},"Kept only the selection.");
+    if(!sel||!need())return;const a=sel.a,b=sel.b,T=total(),L=lockedLen();stopPlay();
+    commit(()=>{if(b<T){removeRange(b,T);emit({type:"delete",at:b/SR,len:(T-b)/SR})}if(a>L){removeRange(L,a);emit({type:"delete",at:L/SR,len:(a-L)/SR})}sel=null;head=L},"Kept only the selection.");
   }
-  function doMute(){if(!sel||!need())return;const a=sel.a,b=sel.b;if(blockIntro(a,b))return;commit(()=>{removeRange(a,b);insertSegs(a,[{s:-1,a:0,b:b-a}])},"Muted the selection.")}
+  function doMute(){if(!sel||!need())return;const a=sel.a,b=sel.b;commit(()=>{removeRange(a,b);insertSegs(a,[{s:-1,a:0,b:b-a}])},"Muted the selection.")}
   function doFade(kind){
     if(!sel||!need())return;const a=sel.a,b=sel.b;
-    if(blockIntro(a,b))return;
     commit(()=>processRange(a,b,(o,n)=>{for(let i=0;i<n;i++)o[i]*=kind==="in"?i/n:1-i/n}),kind==="in"?"Faded in.":"Faded out.");
   }
-  function applyGain(a,b,mult){const i=splitAt(a),j=splitAt(b);for(let k=i;k<j;k++)if(segs[k]&&segs[k].s>=0&&!segs[k].intro)segs[k].g=(segs[k].g||1)*mult}
+  function applyGain(a,b,mult){const i=splitAt(a),j=splitAt(b);for(let k=i;k<j;k++)if(segs[k].s>=0)segs[k].g=(segs[k].g||1)*mult}
   function doNormalize(){
-    if(!need())return;const a=sel?sel.a:0,b=sel?sel.b:total(),pk=peakOf(a,b);
+    if(!need())return;const a=sel?sel.a:lockedLen(),b=sel?sel.b:total(),pk=peakOf(a,b);
     if(pk<.001){opts.notify&&opts.notify("That part is silent, so there’s nothing to normalize.","error");return}
     const mult=.89/pk;
     if(Math.abs(mult-1)<.02){say("That’s already at a good level.");return}
@@ -354,14 +323,14 @@ function create(opts){
     ok.onclick=()=>{const v=inputs.map(i=>Number(i.value));close();onOk(...v)};no.onclick=close;bar.append(ok,no);
     inputs[0]&&inputs[0].focus();inputs.forEach(i=>i.addEventListener("keydown",e=>{if(e.key==="Enter")ok.click();if(e.key==="Escape")no.click()}));
   }
-  function askSilence(){if(!need())return;if(blockIntro(head,head+1))return;ask("Add silence at the playhead",[{label:"Length",value:1,min:.1,max:60,step:.1,suffix:"seconds"}],"Add",s=>{
-    const n=Math.round(clamp(s,.1,60)*SR);stopPlay();commit(()=>{insertSegs(head,[{s:-1,a:0,b:n}]);emit({type:"insert",at:head/SR,len:n/SR});head+=n},"Added "+s+" s of silence.")})}
+  function askSilence(){if(!need())return;ask("Add silence at the playhead",[{label:"Length",value:1,min:.1,max:60,step:.1,suffix:"seconds"}],"Add",s=>{
+    const n=Math.round(clamp(s,.1,60)*SR);stopPlay();commit(()=>{head=Math.max(head,lockedLen());insertSegs(head,[{s:-1,a:0,b:n}]);emit({type:"insert",at:head/SR,len:n/SR});head+=n},"Added "+s+" s of silence.")})}
   function askGain(){if(!need())return;ask("Change volume of "+(sel?"the selection":"everything"),[{label:"Change by",value:3,min:-30,max:30,step:.5,suffix:"dB"}],"Apply",db=>{
-    if(!db)return;const a=sel?sel.a:0,b=sel?sel.b:total();commit(()=>applyGain(a,b,Math.pow(10,db/20)),"Changed the volume by "+db+" dB.")})}
+    if(!db)return;const a=sel?sel.a:lockedLen(),b=sel?sel.b:total();commit(()=>applyGain(a,b,Math.pow(10,db/20)),"Changed the volume by "+db+" dB.")})}
   function askPauses(){if(!need())return;ask("Tighten long pauses"+(sel?" in the selection":""),[
     {label:"Quieter than",value:-45,min:-70,max:-20,step:1,suffix:"dB"},{label:"and longer than",value:.8,min:.2,max:10,step:.1,suffix:"s"},{label:"shorten to",value:.35,min:0,max:3,step:.05,suffix:"s"}],"Tighten",(db,longer,keepS)=>{
-      const thr=Math.pow(10,db/20),min=Math.round(longer*SR),keep=Math.round(Math.min(keepS,longer)*SR),lo=sel?sel.a:0,hi=sel?sel.b:total();
-      const runs=findPauses(thr,min).map(r=>({a:Math.max(r.a,lo,introLen),b:Math.min(r.b,hi)})).filter(r=>r.b-r.a>=min).reverse();
+      const thr=Math.pow(10,db/20),min=Math.round(longer*SR),keep=Math.round(Math.min(keepS,longer)*SR),lo=sel?sel.a:lockedLen(),hi=sel?sel.b:total();
+      const runs=findPauses(thr,min).map(r=>({a:Math.max(r.a,lo),b:Math.min(r.b,hi)})).filter(r=>r.b-r.a>=min).reverse();
       let removed=0,count=0;
       if(!runs.length){say("No pauses that long were found. Try a higher noise level (for example -40 dB) or a shorter pause.");return}
       stopPlay();
@@ -370,13 +339,13 @@ function create(opts){
     })}
 
   /* ---------- undo / redo ---------- */
-  function restore(sn){segs=sn.segs;sel=sn.sel;head=sn.head;if(sn.chapters!=null&&opts.setChapters)opts.setChapters(sn.chapters);ver++;miniCache=null;clampScroll();refreshStatus();ui();draw();opts.onChange&&opts.onChange()}
+  function restore(sn){segs=sn.segs;sel=sn.sel;head=sn.head;if(sn.aux!=null&&opts.setAux)opts.setAux(sn.aux);ver++;miniCache=null;clampScroll();refreshStatus();ui();draw();opts.onChange&&opts.onChange()}
   function undo(){if(!undoS.length||!need())return;stopPlay();redoS.push(snapshot());restore(undoS.pop())}
   function redo(){if(!redoS.length||!need())return;stopPlay();undoS.push(snapshot());restore(redoS.pop())}
   async function revert(){
     if(!need()||sig()===origSig)return;
     const yes=opts.confirm?await opts.confirm("Undo every edit and go back to the original recording?","Revert all"):window.confirm("Revert all edits?");
-    if(!yes)return;stopPlay();remember();segs=JSON.parse(origSig);sel=null;head=0;ver++;miniCache=null;fit();refreshStatus("Reverted.");ui();draw();opts.onChange&&opts.onChange();
+    if(!yes)return;stopPlay();const first=undoS[0];remember();segs=JSON.parse(origSig);if(first&&first.aux!=null&&opts.setAux)opts.setAux(first.aux);sel=null;head=0;ver++;miniCache=null;fit();refreshStatus("Reverted.");ui();draw();opts.onChange&&opts.onChange();
   }
 
   /* ---------- recording and files ---------- */
@@ -387,8 +356,7 @@ function create(opts){
   }
   async function startClip(mode){
     if(!need()||(mode==="replace"&&!sel))return;
-    stopPlay();const point=mode==="replace"?sel.a:head,endPoint=mode==="replace"?sel.b:head;
-    if(blockIntro(point,Math.max(endPoint,point+SR*.05)))return;
+    stopPlay();const point=mode==="replace"?sel.a:Math.max(head,lockedLen()),endPoint=mode==="replace"?sel.b:point;
     if(E.aepre.checked&&point>SR*.2){
       await new Promise(res=>{startPlay([[Math.max(0,point-2*SR),point]],point);const w=setInterval(()=>{if(!play){clearInterval(w);res()}},50)});
     }
@@ -417,32 +385,62 @@ function create(opts){
     catch(e){opts.notify&&opts.notify("Couldn’t use that file: "+(e&&e.message||e),"error")}
   }
 
+  /* ---------- the intro: a locked segment at the very start ---------- */
+  async function getIntroBuffer(){
+    if(introSrc)return introSrc;
+    const res=await fetch(opts.introUrl||"/assets/intro.mp3",{cache:"force-cache"});
+    if(!res.ok)throw new Error("the intro file wasn’t found (HTTP "+res.status+")");
+    return introSrc=await decodeBlob(await res.blob(),44100);
+  }
+  async function addIntro(){
+    if(!ready()||hasIntro()||recCtl)return false;
+    busy(true,"Adding the intro…");let buf;
+    try{buf=await getIntroBuffer()}catch(e){busy(false);opts.notify&&opts.notify("Couldn’t add the intro: "+(e&&e.message||e),"error");return false}
+    busy(false);stopPlay();
+    const si=addSource(buf),n=Math.round(buf.length/sources[si].r);
+    commit(()=>{segs.unshift({s:si,a:0,b:n,g:1,lock:true});head+=n;if(sel)sel={a:sel.a+n,b:sel.b+n};emit({type:"insert",at:0,len:n/SR,intro:true})},"Added the intro. It’s locked: nothing can be edited or placed over it.",{allowLock:true});
+    return true;
+  }
+  function removeIntro(){
+    if(!need()||!hasIntro())return;const n=lockedLen();stopPlay();
+    commit(()=>{segs=segs.filter(s=>!s.lock);head=Math.max(0,head-n);sel=null;emit({type:"delete",at:0,len:n/SR,intro:true})},"Removed the intro.",{allowLock:true});
+  }
+
   /* ---------- rendering to MP3 ---------- */
   let lameLoad=null;
   const loadLame=()=>window.lamejs?Promise.resolve():(lameLoad||(lameLoad=new Promise((res,rej)=>{
     const s=document.createElement("script");s.src=opts.lameUrl||"/host/vendor/lame.min.js";
     s.onload=()=>window.lamejs?res():rej(new Error("the MP3 encoder didn’t start"));s.onerror=()=>{lameLoad=null;rej(new Error("couldn’t load the MP3 encoder"))};document.head.append(s)})));
-  async function renderMp3(onProgress){
+  async function renderMp3(onProgress,from,to){
     await loadLame();
-    const enc=new window.lamejs.Mp3Encoder(1,SR,opts.kbps||64),parts=[],T=total(),FRAME=1152*10,pcm=new Int16Array(FRAME);
-    let fill=0,done=0,last=performance.now();
+    from=from==null?0:from;to=to==null?total():to;
+    let at=0,hi=false;for(const s of segs){const len=s.b-s.a;if(at<to&&at+len>from&&s.s>=0&&sources[s.s].r>1)hi=true;at+=len}
+    const OUT=hi?SR*2:SR,k=OUT/SR;
+    const enc=new window.lamejs.Mp3Encoder(1,OUT,opts.kbps||(hi?80:64)),parts=[],FRAME=1152*10,pcm=new Int16Array(FRAME);
+    const T=Math.max(1,to-from);let fill=0,done=0,last=performance.now(),pos=0;
     const push=n=>{const out=enc.encodeBuffer(n===FRAME?pcm:pcm.subarray(0,n));if(out&&out.length)parts.push(new Uint8Array(out.buffer,out.byteOffset,out.length).slice())};
     for(const s of segs){
-      const d=s.s>=0?sources[s.s].data:null,g=s.g||1;
-      for(let i=s.a;i<s.b;i++){
-        let v=d?d[i]*g:0;v=v<-1?-1:v>1?1:v;pcm[fill++]=v<0?v*32768:v*32767;done++;
-        if(fill===FRAME){push(FRAME);fill=0;if(performance.now()-last>14){await sleep(0);last=performance.now();onProgress&&onProgress(done/T)}}
+      const len=s.b-s.a,sa=Math.max(from,pos),sb=Math.min(to,pos+len);
+      if(sb>sa){
+        const src=s.s>=0?sources[s.s]:null,g=s.g||1,r=src?src.r:1,d=src&&src.data,dl=d?d.length:0,base=s.a+(sa-pos),n=Math.round((sb-sa)*k);
+        for(let j=0;j<n;j++){
+          let v=0;
+          if(d){const x=(base+j/k)*r,i0=Math.floor(x),f=x-i0,a0=i0<dl?d[i0]:0,a1=i0+1<dl?d[i0+1]:a0;v=(a0+(a1-a0)*f)*g}
+          v=v<-1?-1:v>1?1:v;pcm[fill++]=v<0?v*32768:v*32767;done++;
+          if(fill===FRAME){push(FRAME);fill=0;if(performance.now()-last>14){await sleep(0);last=performance.now();onProgress&&onProgress(done/(T*k))}}
+        }
       }
+      pos+=len;if(pos>=to)break;
     }
     if(fill)push(fill);
     const tail=enc.flush();if(tail&&tail.length)parts.push(new Uint8Array(tail.buffer,tail.byteOffset,tail.length).slice());
     return new Blob(parts,{type:"audio/mpeg"});
   }
-  async function apply(onProgress,force){
+  async function apply(onProgress){
     if(!segs.length||failed)return blobCurrent;
-    const s=sig();if(!force&&s===renderedSig)return blobCurrent;
+    const s=sig();if(s===renderedSig)return blobCurrent;
     stopPlay();busy(true,"Rendering your edits…");
-    try{const out=await renderMp3(p=>{if(onProgress)onProgress(p);E.aebusytext.textContent="Rendering your edits… "+Math.round(p*100)+"%"});blobCurrent=out;renderedSig=s;return out}
+    try{const out=await renderMp3(p=>{if(onProgress)onProgress(p);E.aebusytext.textContent="Rendering your edits… "+Math.round(p*100)+"%"});blobCurrent=out;renderedSig=s;if(opts.onRendered)opts.onRendered(out);return out}
     finally{busy(false);ui()}
   }
 
@@ -454,11 +452,11 @@ function create(opts){
     E.aeplaysel.disabled=E.aepreview.disabled=!hasSel;
     [E.aedelete,E.aecut,E.aecopy,E.aetrim,E.aesilence,E.aefadein,E.aefadeout,E.aerecsel].forEach(b=>b.disabled=!hasSel);
     E.aepaste.disabled=!(can&&clipSegs);
-    [E.aeinsil,E.aegain,E.aenorm,E.aepauses,E.aerec,E.aezin,E.aezout,E.aezfit,E.hpenhance].forEach(b=>b.disabled=!can);
-    E.aeintro.disabled=!can||hasIntro();E.aeintro.textContent=hasIntro()?"Intro locked":"Insert intro at beginning";
+    [E.aeinsil,E.aegain,E.aenorm,E.aepauses,E.aerec,E.aezin,E.aezout,E.aezfit].forEach(b=>b.disabled=!can);
     E.aefile.disabled=!can;E.aefilesel.disabled=!hasSel;E.aefilesellab.classList.toggle("disabled",!hasSel);
     E.aeundo.disabled=!can||!undoS.length;E.aeredo.disabled=!can||!redoS.length;E.aerevert.disabled=!can||sig()===origSig;
     E.aeapply.disabled=!can||sig()===renderedSig;
+    E.aeintro.disabled=!can||hasIntro()||opts.introEnabled===false;E.aeintrorm.disabled=!can||!hasIntro();E.aeintro.hidden=opts.introEnabled===false||hasIntro();E.aeintrorm.hidden=opts.introEnabled===false||!hasIntro();
     updateClock();
   }
 
@@ -466,13 +464,16 @@ function create(opts){
   E.aeplay.onclick=togglePlay;E.aeplaysel.onclick=playSelection;E.aepreview.onclick=previewCut;
   E.aedelete.onclick=doDelete;E.aecut.onclick=doCut;E.aecopy.onclick=doCopy;E.aepaste.onclick=doPaste;E.aetrim.onclick=doTrim;
   E.aesilence.onclick=doMute;E.aeinsil.onclick=askSilence;E.aefadein.onclick=()=>doFade("in");E.aefadeout.onclick=()=>doFade("out");
-  E.aegain.onclick=askGain;E.aenorm.onclick=doNormalize;E.aepauses.onclick=askPauses;E.aeintro.onclick=insertIntro;
+  E.aegain.onclick=askGain;E.aenorm.onclick=doNormalize;E.aepauses.onclick=askPauses;
+  E.aeintro.onclick=addIntro;E.aeintrorm.onclick=removeIntro;
+  try{E.aeintroauto.checked=localStorage.getItem("aa_intro_auto")!=="0"}catch(e){}
+  E.aeintroauto.onchange=()=>{try{localStorage.setItem("aa_intro_auto",E.aeintroauto.checked?"1":"0")}catch(e){}};
   E.aeundo.onclick=undo;E.aeredo.onclick=redo;E.aerevert.onclick=revert;
   E.aerec.onclick=()=>startClip("insert");E.aerecsel.onclick=()=>startClip("replace");E.aerecstop.onclick=finishClip;E.aereccancel.onclick=cancelClip;
   E.aefile.onchange=e=>{const f=e.target.files[0];e.target.value="";fromFile(f,"insert")};
   E.aefilesel.onchange=e=>{const f=e.target.files[0];e.target.value="";fromFile(f,"replace")};
   E.aezin.onclick=()=>zoomAt(1.6,(cv.clientWidth||600)/2);E.aezout.onclick=()=>zoomAt(1/1.6,(cv.clientWidth||600)/2);E.aezfit.onclick=()=>{sel?zoomSel():fit()};
-  E.aeapply.onclick=async()=>{try{const b=await apply();opts.notify&&opts.notify("Edits rendered ("+(b.size/1048576).toFixed(1)+" MB).","success");opts.onRendered&&opts.onRendered(b)}catch(e){opts.notify&&opts.notify("Couldn’t render the edits: "+(e&&e.message||e),"error")}};
+  E.aeapply.onclick=async()=>{try{const b=await apply();opts.notify&&opts.notify("Edits rendered ("+(b.size/1048576).toFixed(1)+" MB).","success")}catch(e){opts.notify&&opts.notify("Couldn’t render the edits: "+(e&&e.message||e),"error")}};
   box.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("button");if(b&&!b.closest(".ae-params"))b.blur()});
 
   cv.addEventListener("pointerdown",e=>{
@@ -502,7 +503,7 @@ function create(opts){
     if(e.ctrlKey||e.metaKey){e.preventDefault();zoomAt(e.deltaY<0?1.25:.8,e.offsetX)}
     else if(Math.abs(e.deltaX)>Math.abs(e.deltaY)){e.preventDefault();scroll+=e.deltaX/pps;clampScroll();draw()}
   },{passive:false});
-  function setSel(a,b){if(a>b)[a,b]=[b,a];if((b-a)/SR<MIN_SEL){sel=null;return}sel={a,b}}
+  function setSel(a,b){if(a>b)[a,b]=[b,a];const L=lockedLen();a=Math.max(a,L);b=Math.max(b,L);if((b-a)/SR<MIN_SEL){sel=null;return}sel={a,b}}
   const miniSeek=e=>{if(!segs.length)return;const r=mini.getBoundingClientRect(),t=clamp((e.clientX-r.left)/r.width,0,1)*dur();scroll=t-vis()/2;clampScroll();draw()};
   let miniDrag=false;mini.addEventListener("pointerdown",e=>{miniDrag=true;mini.setPointerCapture(e.pointerId);miniSeek(e)});
   mini.addEventListener("pointermove",e=>{if(miniDrag)miniSeek(e)});["pointerup","pointercancel"].forEach(ev=>mini.addEventListener(ev,()=>miniDrag=false));
@@ -527,9 +528,11 @@ function create(opts){
     else if(e.key==="+"||e.key==="="){zoomAt(1.6,(cv.clientWidth||600)/2)}else if(e.key==="-"){zoomAt(1/1.6,(cv.clientWidth||600)/2)}else if(e.key==="0"){fit()}
   });
   ui();
-  return{load,reset,replaceAudio,apply,fit,insertIntro,deleteRanges,
-    isDirty:()=>segs.length>0&&sig()!==renderedSig,hasAudio:()=>segs.length>0&&!failed,hasIntro,introDuration:()=>introLen/SR,duration:()=>dur(),playhead:()=>head/SR,current:()=>blobCurrent,
-    _debug:()=>({segs:JSON.parse(sig()),sources:sources.length,sel,head,pps,scroll,total:total()}),_select:(a,b)=>{setSel(Math.round(a*SR),Math.round(b*SR));ui();draw()},_head:t=>{head=Math.round(t*SR);ui();draw()}};
+  return{load,reset,apply,fit,addIntro,removeIntro,hasIntro,
+    introSeconds:()=>lockedLen()/SR,autoIntro:()=>E.aeintroauto.checked&&opts.introEnabled!==false,setNextLoadIntro:t=>{nextIntro=+t||0},
+    snapQuiet,applyCuts,previewRange,goTo,setHighlights,captionStream,renderRange:(a,b)=>renderMp3(null,Math.round(a*SR),Math.round(b*SR)),
+    isDirty:()=>segs.length>0&&sig()!==renderedSig,hasAudio:()=>segs.length>0&&!failed,duration:()=>dur(),playhead:()=>head/SR,current:()=>blobCurrent,
+    _debug:()=>({segs:JSON.parse(sig()),sources:sources.length,sel,head,pps,scroll,total:total()}),_violate:()=>commit(()=>removeRange(0,SR*2),"x"),_select:(a,b)=>{setSel(Math.round(a*SR),Math.round(b*SR));ui();draw()},_head:t=>{head=Math.round(t*SR);ui();draw()}};
 }
 return{create};
 })();

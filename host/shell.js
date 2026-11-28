@@ -16,7 +16,7 @@ async function api(body){
 function header(){
   const page=document.body.dataset.page,link=(p,href,label)=>`<a href="${href}"${p===page?' class="on"':""}>${label}</a>`;
   $("hdr").innerHTML=`<header class="hbar"><a class="brand" href="/host/"><img src="/logo.svg" alt=""><span>The Agastya Archive</span><em>Host</em></a>
-<nav class="hnav">${link("dashboard","/host/#dashboard","Dashboard")}${link("record","/host/#record","Record")}${FEATURES.hostIdeas!==false?link("ideas","/host/#ideas","Ideas"):""}${FEATURES.scriptMaker!==false?link("script","/host/#script","Scripts"):""}${FEATURES.liveStudio!==false?link("live","/host/#live","Live"):""}</nav>
+<nav class="hnav">${link("dashboard","/host/#dashboard","Dashboard")}${link("record","/host/#record","Record")}${FEATURES.hostIdeas!==false?link("ideas","/host/#ideas","Ideas"):""}${FEATURES.hostScripts!==false?link("scripts","/host/#scripts","Scripts"):""}${FEATURES.hostLive!==false?link("live","/host/#live","Live"):""}</nav>
 <div class="hright"><button type="button" id="hchangelog">What’s new</button><span class="who" id="hwho" hidden></span><button type="button" id="hswitch" hidden>Switch</button><a class="btn" href="/">View site ↗</a><button type="button" id="hlock">Lock</button></div></header>`;
   if(!$("toastStack")){const stack=document.createElement("div");stack.id="toastStack";stack.className="toast-stack";stack.setAttribute("aria-live","polite");stack.setAttribute("aria-atomic","false");document.body.append(stack)}
   if(!$("hostDialog")){
@@ -30,7 +30,7 @@ function header(){
       dialog.addEventListener("close",()=>resolve(dialog.returnValue==="confirm"),{once:true});
       dialog.showModal();
     });
-    $("hchangelog").onclick=()=>ask("What’s new · v"+(window.SITE_CONFIG&&window.SITE_CONFIG.version||"1.0.0"),"New in this release:\n• A locked jazz intro is added to the start of every episode.\n• AI transcript cleanup suggests audio cuts you can apply with one click.\n• Scripts is a new tab, linked from Ideas for quick script drafts.\n• Live hosts multi-guest podcasts with chat, sound effects, timer and on-screen questions.\n• Live captions work for long Chrome/Edge recordings, with an auto-transcript off switch.\n• Dashboard, Record, Ideas, Scripts and Live share one smooth host studio.","Close").then(()=>{});
+    $("hchangelog").onclick=()=>ask("What’s new · v"+(window.SITE_CONFIG&&window.SITE_CONFIG.version||"1.0.0"),"New in this release:\n• Live room: record with remote guests, with a lobby, chat, on-screen questions, a shared timer and sound effects.\n• A locked show intro that is added to every episode.\n• Transcripts that work for long episodes, with browser captions and an off switch.\n• Scripts tab: write episode scripts with AI, linked to your ideas.\n• A full audio editor, with AI cleanup suggestions.\n• Loading screen and much faster loading.","Close").then(()=>{});
     window.__hostDialog=ask;
   }
   if(identity){$("hwho").hidden=$("hswitch").hidden=false;$("hwho").textContent=identity.name+" · "+identity.role;
@@ -88,5 +88,10 @@ function notify(message,type="success"){
 function confirmAction(message,heading="Are you sure?"){
   return window.__hostDialog?window.__hostDialog(heading,message,"Continue"):Promise.resolve(window.confirm(message));
 }
-return{api,features:FEATURES,pw:()=>pw,who:()=>identity,ready:cb=>unlocked?cb():cbs.push(cb),notify,confirm:confirmAction};
+const parseQuestions=text=>{ // "Q: …" lines first; otherwise any short line that ends with a question mark
+  const lines=String(text||"").split(/\r?\n/).map(l=>l.trim()),tagged=lines.map(l=>l.match(/^(?:[-*•]\s*)?(?:Q|Question)\s*\d*\s*[:.\-]\s*(.+)$/i)).filter(Boolean).map(m=>m[1].trim());
+  const found=tagged.length?tagged:lines.map(l=>l.replace(/^(?:[-*•]|\d+[.)])\s*/,"")).filter(l=>/\?$/.test(l)&&l.length>=12&&l.length<=220);
+  return [...new Set(found)].slice(0,60);
+};
+return{api,parseQuestions,features:FEATURES,pw:()=>pw,who:()=>identity,ready:cb=>unlocked?cb():cbs.push(cb),notify,confirm:confirmAction};
 })();

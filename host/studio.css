@@ -119,11 +119,25 @@
 .ae-dot{width:11px;height:11px;border-radius:50%;background:#ff453a;animation:aeblink 1s ease-in-out infinite}
 @keyframes aeblink{50%{opacity:.25}}
 .ae-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-top:12px}
-#hpcleanupCuts{display:grid;gap:6px;margin:10px 0;padding:12px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
-.cut-row{display:flex;align-items:center;gap:9px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink);margin:0!important}
-.cut-row input{width:auto!important;accent-color:var(--accent)}
-#hpcleanupCuts .acts{margin-top:6px}
-#hpenhanceStatus{min-height:1.2em;margin-top:8px;color:var(--mute);font-size:12.5px}
-#hpenhanceStatus[data-error="true"]{color:#ff8a80}
 @media (max-width:640px){.ae-label{min-width:100%}.ae-view{height:180px}}
 @media (prefers-reduced-motion:reduce){.ae-busy i,.ae-dot{animation:none}}
+
+/* AI cleanup */
+.ae-ai{margin-top:12px;padding:12px;border:1px solid var(--gold);border-radius:10px;background:rgba(224,176,74,.06)}
+.ae-ai[hidden]{display:none}
+.ae-ai-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.ae-ai-opts{display:flex;flex-wrap:wrap;gap:8px 18px;margin:8px 0;font-size:13px}
+.ae-ai-opts label{display:inline-flex;align-items:center;gap:6px}
+.ae-ai-opts input[type=number]{width:70px;padding:4px 6px;border:1px solid #3a2f25;border-radius:6px;background:#0e0a07;color:var(--ink)}
+.ae-ai>input{width:100%;padding:8px 10px;border:1px solid #3a2f25;border-radius:6px;background:#0e0a07;color:var(--ink)}
+.ae-ai-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:10px}
+.ae-ai-list{display:grid;gap:6px;margin-top:10px}
+.ae-ai-item{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid #3a2f25;border-radius:8px;background:rgba(255,255,255,.03)}
+.ae-ai-item b{font-size:13px}.ae-ai-item span{font-size:12.5px;color:var(--mute)}
+.ae-ai-item .ae-ai-btns{display:flex;gap:6px}
+.ae-ai-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px}
+/* transcript settings */
+.tr-buttons{display:inline-flex;gap:8px}
+.tr-settings{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin:8px 0 4px}
+.tr-settings select{max-width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:13px}
+.tr-settings .ae-check{margin-left:0;color:var(--ink)}

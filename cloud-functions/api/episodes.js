@@ -1,8 +1,7 @@
 // GET  /api/episodes  -> public episode list
 // POST /api/episodes  -> admin actions: check | upload-start | publish | delete; PUT uploads an audio part
 import { getStore } from "@edgeone/pages-blob";
-import { createHash, timingSafeEqual } from "node:crypto";
-import { wavToMp3, streamWavToMp3 } from "../lib/audio.js";
+import { createHash, timingSafeEqual, randomBytes } from "node:crypto";
 
 const CHUNK = 2 * 1024 * 1024, MAX_CHUNKS = 500;
 const pad = i => String(i).padStart(5, "0");
@@ -12,29 +11,24 @@ const REACTIONS = ["fire", "laugh", "mindblown", "insight"];
 const IDEA_STATUS = ["new", "discussing", "planned", "recorded", "parked"], ID_RE = /^[a-z0-9]{6,20}$/;
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const clip = (v, n) => String(v == null ? "" : v).slice(0, n);
-const parseJsonText = value => {
-  const text = String(value || "").trim().replace(/^\x60{3}(?:json)?\s*/i, "").replace(/\s*\x60{3}\s*$/, "").trim();
-  try { return JSON.parse(text); } catch { return null; }
-};
 const person = p => ({ name: clip(p && p.name, 40).trim() || "Someone", role: p && p.role === "Co-host" ? "Co-host" : "Host" });
 const readAll = async (store, prefix) => {
   const { blobs } = await store.list({ prefix, consistency: "strong" });
   return (await Promise.all(blobs.map(o => store.get(o.key, { type: "json" }).catch(() => null)))).filter(Boolean);
 };
 const dropAudio = async (store, id) => { const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" }); for (const o of blobs) await store.delete(o.key); };
-const readUpload = async (store, id, parts) => {
-  const raw = await Promise.all(Array.from({ length: parts }, (_, i) => store.get(`audio/${id}/${pad(i)}`, { type: "arrayBuffer", consistency: "strong" })));
-  const missing = raw.findIndex(part => !part);
-  if (missing >= 0) throw new Error(`Audio part ${missing + 1} is missing. Upload the audio again.`);
-  const chunks = raw.map(part => new Uint8Array(part)), size = chunks.reduce((total, part) => total + part.byteLength, 0);
-  return { chunks, size };
-};
 const cleanWords = words => Array.isArray(words) ? words.slice(0, 30000).map(w => ({ word: clip(w.word, 100), start: Number(w.start), end: Number(w.end) })).filter(w => w.word && Number.isFinite(w.start) && Number.isFinite(w.end) && w.start >= 0 && w.end >= w.start) : [];
 const newestFirst = (a, c) => Date.parse(c.updatedAt) - Date.parse(a.updatedAt);
 const reactionTotals = c => Object.fromEntries(REACTIONS.map(r => [r, Math.max(0, Number(c && c[r]) || 0)]));
 const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length === y.length && timingSafeEqual(x, y); };
 // ---- speed: tiny in-instance caches, and heavy transcript data kept out of the shared episode index ----
+// Live rooms: a host-approved lobby, with WebRTC signalling relayed through short-lived blobs (cloud functions can't hold sockets)
+const ROOM_RE = /^[A-Z2-9]{6}$/, ROOM_TTL = 12 * 3600 * 1000, MAX_GUESTS = 12;
+const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const newRoomCode = () => Array.from(randomBytes(6), b => ROOM_ALPHABET[b % ROOM_ALPHABET.length]).join("");
+const tokenHash = t => createHash("sha256").update("room-token|" + t).digest("hex");
+const roomGuests = new Map(); // "CODE:gid" -> {gid,name}; guest records never change once written
 const memo = { index: null, indexAt: 0, list: null, listAt: 0, analytics: null, analyticsAt: 0 };
 const INDEX_TTL = 5000, LIST_TTL = 5000, ANALYTICS_TTL = 30000;
 const heavyKey = id => `ep-data/${id}.json`;
@@ -70,6 +64,31 @@ async function handle(context) {
     memo.index = idx; memo.indexAt = Date.now(); return idx;
   };
   const saveIndex = async idx => { await store.setJSON("episodes.json", idx); memo.index = idx; memo.indexAt = Date.now(); memo.list = null; };
+  const roomOf = async code => { // an open, unexpired room, or null
+    if (!ROOM_RE.test(code)) return null;
+    const r = await store.get(`rooms/${code}/room.json`, { type: "json" }).catch(() => null);
+    return r && !r.closed && Date.now() - Date.parse(r.createdAt) < ROOM_TTL ? r : null;
+  };
+  const publicRoom = r => ({ code: r.code, title: r.title, hostName: r.hostName, ...r.pub });
+  const guestAuth = async (code, gid, token) => {
+    if (!ID_RE.test(gid) || !/^[a-f0-9]{48}$/.test(String(token || ""))) return null;
+    const g = await store.get(`rooms/${code}/g/${gid}.json`, { type: "json" }).catch(() => null);
+    return g && same(g.th, tokenHash(token)) ? g : null;
+  };
+  const appendSig = async (code, from, to, kind, data) => { // each file has exactly one writer, so messages can't collide
+    const key = `rooms/${code}/sig/${from}__${to}.json`, cur = (await store.get(key, { type: "json" }).catch(() => null)) || { n: 0, items: [] };
+    cur.n += 1; cur.items.push({ n: cur.n, kind, data }); if (cur.items.length > 150) cur.items = cur.items.slice(-150);
+    await store.setJSON(key, cur); return cur.n;
+  };
+  const startText = async (input, maxTokens = 8192) => { // starts a background Gemini job; the client polls with "script-status"
+    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json", "Api-Revision": "2026-05-20" }, body: JSON.stringify({ model: env.GEMINI_TEXT_MODEL || "gemini-3.8-flash", input, background: true, store: true, generation_config: { thinking_level: "low", max_output_tokens: maxTokens } }) });
+    let result = {}; try { result = await response.json(); } catch {}
+    if (!response.ok) return json({ error: result.error?.message || "Gemini request failed (HTTP " + response.status + ")." }, 502);
+    const interactionId = result.id || result.interaction?.id;
+    if (!interactionId) return json({ error: "Gemini did not return a background interaction ID." }, 502);
+    return json({ interactionId, status: result.status || "in_progress" });
+  };
   const readHeavy = async (ep, st = fast) => {
     if (ep.transcript || hasWordsIn(ep)) return { transcript: ep.transcript || "", transcriptWords: Array.isArray(ep.transcriptWords) ? ep.transcriptWords : [] };
     const d = await st.get(heavyKey(ep.id), { type: "json" }).catch(() => null);
@@ -153,6 +172,40 @@ async function handle(context) {
       await store.setJSON(rateKey,{createdAt:comment.createdAt});
       return json({ok:true,comment});
     }
+    // ---- live rooms, guest side: join, then wait for the host to let you in ----
+    if (b.action === "room-join") {
+      const code = String(b.code || "").toUpperCase(), room = await roomOf(code);
+      if (!room) return json({ error: "That room isn’t open. Check the code, or ask the host for a fresh link." }, 404);
+      const { blobs } = await store.list({ prefix: `rooms/${code}/g/`, consistency: "strong" });
+      if (blobs.length >= MAX_GUESTS) return json({ error: "This room is full." }, 429);
+      const gid = newId(), token = randomBytes(24).toString("hex"), name = clip(b.name, 40).trim() || "Guest";
+      await store.setJSON(`rooms/${code}/g/${gid}.json`, { gid, name, th: tokenHash(token), joinedAt: new Date().toISOString() });
+      return json({ ok: true, gid, token, room: publicRoom(room) });
+    }
+    if (b.action === "room-poll") {
+      const code = String(b.code || "").toUpperCase(), room = await roomOf(code);
+      if (!room) return json({ error: "The room has ended." }, 410);
+      const g = await guestAuth(code, String(b.gid || ""), b.token);
+      if (!g) return json({ error: "Not allowed." }, 403);
+      const admit = await store.get(`rooms/${code}/admit/${g.gid}.json`, { type: "json" }).catch(() => null);
+      let sig = [];
+      if (admit && admit.status === "in") { // nothing is relayed to a guest until the host has admitted them
+        const inbox = await store.get(`rooms/${code}/sig/host__${g.gid}.json`, { type: "json" }).catch(() => null), since = Math.max(0, Math.floor(Number(b.since) || 0));
+        sig = inbox ? inbox.items.filter(i => i.n > since) : [];
+      }
+      return json({ room: publicRoom(room), admit: admit ? admit.status : null, sig, now: Date.now() });
+    }
+    if (b.action === "room-send") {
+      const code = String(b.code || "").toUpperCase(), room = await roomOf(code);
+      if (!room) return json({ error: "The room has ended." }, 410);
+      const g = await guestAuth(code, String(b.gid || ""), b.token);
+      if (!g) return json({ error: "Not allowed." }, 403);
+      const admit = await store.get(`rooms/${code}/admit/${g.gid}.json`, { type: "json" }).catch(() => null);
+      if (!admit || admit.status !== "in") return json({ error: "The host hasn’t let you in yet." }, 403);
+      if (!["answer", "ice", "bye"].includes(b.kind) || JSON.stringify(b.data || {}).length > 12000) return json({ error: "Bad message." }, 400);
+      await appendSig(code, g.gid, "host", b.kind, b.data || {});
+      return json({ ok: true });
+    }
   }
 
   if (!env.ADMIN_PASSWORD || !same(request.headers.get("x-admin-password"), env.ADMIN_PASSWORD)) {
@@ -172,6 +225,64 @@ async function handle(context) {
     let migrated = false;
     try { const idx = await load(); migrated = await migrateHeavy(idx); if (migrated) await saveIndex(idx); } catch (e) {}
     return json({ ok: true, migrated });
+  }
+
+  // ---- live rooms, host side ----
+  if (b.action === "room-create") {
+    let code = null;
+    for (let i = 0; i < 6 && !code; i++) { const c = newRoomCode(); if (!(await store.get(`rooms/${c}/room.json`, { type: "json" }).catch(() => null))) code = c; }
+    if (!code) return json({ error: "Couldn’t make a room code. Try again." }, 500);
+    const by = person(b.by), room = { code, title: clip(b.title, 120).trim() || "Live recording", hostName: by.name, createdAt: new Date().toISOString(), closed: false, pub: { recording: "idle", question: null, timer: null, notice: null } };
+    await store.setJSON(`rooms/${code}/room.json`, room);
+    return json({ ok: true, code, room: publicRoom(room) });
+  }
+  if (b.action === "room-host-poll") {
+    const code = String(b.code || "").toUpperCase(), room = await roomOf(code);
+    if (!room) return json({ error: "The room has ended." }, 410);
+    const { blobs } = await store.list({ prefix: `rooms/${code}/g/`, consistency: "strong" }), guests = [];
+    await Promise.all(blobs.map(async o => {
+      const gid = o.key.split("/").pop().replace(".json", ""), ck = code + ":" + gid;
+      let g = roomGuests.get(ck);
+      if (!g) { const rec = await store.get(o.key, { type: "json" }).catch(() => null); if (!rec) return; g = { gid: rec.gid, name: rec.name, joinedAt: rec.joinedAt }; roomGuests.set(ck, g); }
+      guests.push(g);
+    }));
+    const since = b.since && typeof b.since === "object" ? b.since : {}, watch = Array.isArray(b.watch) ? b.watch : [], sig = {};
+    await Promise.all(guests.filter(g => watch.includes(g.gid)).map(async g => { // only guests still connecting need their inbox read
+      const inbox = await store.get(`rooms/${code}/sig/${g.gid}__host.json`, { type: "json" }).catch(() => null), n = Math.max(0, Math.floor(Number(since[g.gid]) || 0)), items = inbox ? inbox.items.filter(i => i.n > n) : [];
+      if (items.length) sig[g.gid] = items;
+    }));
+    return json({ guests: guests.sort((a, c) => Date.parse(a.joinedAt) - Date.parse(c.joinedAt)), sig, now: Date.now() });
+  }
+  if (b.action === "room-update") {
+    const code = String(b.code || "").toUpperCase(), room = await roomOf(code);
+    if (!room) return json({ error: "The room has ended." }, 410);
+    const p = b.pub || {};
+    if (["idle", "rec", "paused"].includes(p.recording)) room.pub.recording = p.recording;
+    if (p.question === null) room.pub.question = null; else if (p.question && typeof p.question === "object") room.pub.question = { id: clip(p.question.id, 20), text: clip(p.question.text, 400) };
+    if (p.timer === null) room.pub.timer = null; else if (p.timer && typeof p.timer === "object") room.pub.timer = { state: ["run", "pause", "idle"].includes(p.timer.state) ? p.timer.state : "idle", remaining: Math.max(0, Math.min(86400000, Number(p.timer.remaining) || 0)), at: Date.now() };
+    if (typeof p.notice === "string" || p.notice === null) room.pub.notice = p.notice === null ? null : clip(p.notice, 200);
+    await store.setJSON(`rooms/${code}/room.json`, room);
+    return json({ ok: true, room: publicRoom(room) });
+  }
+  if (b.action === "room-admit") {
+    const code = String(b.code || "").toUpperCase(), gid = String(b.gid || "");
+    if (!(await roomOf(code)) || !ID_RE.test(gid) || !["in", "kicked"].includes(b.status)) return json({ error: "Bad request." }, 400);
+    await store.setJSON(`rooms/${code}/admit/${gid}.json`, { status: b.status, at: new Date().toISOString() });
+    return json({ ok: true });
+  }
+  if (b.action === "room-send-host") {
+    const code = String(b.code || "").toUpperCase(), gid = String(b.gid || "");
+    if (!(await roomOf(code)) || !ID_RE.test(gid)) return json({ error: "Bad request." }, 400);
+    if (!["offer", "ice", "bye"].includes(b.kind) || JSON.stringify(b.data || {}).length > 12000) return json({ error: "Bad message." }, 400);
+    await appendSig(code, "host", gid, b.kind, b.data || {});
+    return json({ ok: true });
+  }
+  if (b.action === "room-end") {
+    const code = String(b.code || "").toUpperCase(), room = await roomOf(code);
+    if (!room) return json({ ok: true });
+    room.closed = true; await store.setJSON(`rooms/${code}/room.json`, room);
+    try { const { blobs } = await store.list({ prefix: `rooms/${code}/`, consistency: "strong" }); await Promise.all(blobs.filter(o => !o.key.endsWith("/room.json")).map(o => store.delete(o.key).catch(() => {}))); } catch (e) {}
+    return json({ ok: true });
   }
 
   // ---- ideas board ----
@@ -210,8 +321,12 @@ async function handle(context) {
     return json({ ok: true });
   }
 
-  // ---- scripts: private host drafts, linked to ideas and drafts but never public ----
-  if (b.action === "list-scripts") return json({ scripts: (await readAll(store, "scripts/")).sort(newestFirst) });
+  // ---- drafts: an episode in progress (text, notes, transcript and optionally audio), never public ----
+  // ---- script maker: saved scripts, written and rewritten with AI, linked to ideas ----
+  if (b.action === "list-scripts") {
+    const scripts = await readAll(store, "scripts/");
+    return json({ scripts: scripts.sort(newestFirst).map(x => ({ id: x.id, title: x.title, ideaId: x.ideaId || null, unit: x.unit || "", words: x.words || 0, author: x.author, updatedBy: x.updatedBy, createdAt: x.createdAt, updatedAt: x.updatedAt })) });
+  }
   if (b.action === "get-script") {
     const id = String(b.id || "");
     if (!ID_RE.test(id)) return json({ error: "Bad script id" }, 400);
@@ -219,19 +334,19 @@ async function handle(context) {
     return script ? json({ script }) : json({ error: "Script not found" }, 404);
   }
   if (b.action === "save-script") {
-    const s = b.script || {}, by = person(b.by), id = s.id ? String(s.id) : newId(), key = `scripts/${id}.json`;
+    const e = b.script || {}, by = person(b.by), id = e.id ? String(e.id) : newId(), key = `scripts/${id}.json`;
     if (!ID_RE.test(id)) return json({ error: "Bad script id" }, 400);
-    const old = s.id ? await store.get(key, { type: "json" }).catch(() => null) : null;
-    if (s.id && !old) return json({ error: "Script not found" }, 404);
-    const title = clip(s.title !== undefined ? s.title : old && old.title, 200).trim();
-    const text = clip(s.text !== undefined ? s.text : old && old.text, 100000);
-    if (!title) return json({ error: "Give the script a title first." }, 400);
-    const now = new Date().toISOString();
-    const script = { id, title, unit: clip(s.unit !== undefined ? s.unit : old && old.unit, 100),
-      notes: clip(s.notes !== undefined ? s.notes : old && old.notes, 8000), text,
-      ideaId: ID_RE.test(String(s.ideaId || "")) ? String(s.ideaId) : (old && old.ideaId) || null,
-      author: old ? old.author : by, createdAt: old ? old.createdAt : now, updatedAt: now, updatedBy: by };
+    const old = e.id ? await store.get(key, { type: "json" }).catch(() => null) : null;
+    if (e.id && !old) return json({ error: "Script not found" }, 404);
+    const now = new Date().toISOString(), text = clip(e.text, 200000), brief = e.brief || {};
+    const ideaId = ID_RE.test(String(e.ideaId || "")) ? String(e.ideaId) : null;
+    const script = { id, title: clip(e.title, 200).trim() || "Untitled script", ideaId, unit: clip(e.unit, 80),
+      brief: { minutes: Math.max(1, Math.min(90, Math.round(Number(brief.minutes) || 8))), tone: clip(brief.tone, 60), rant: Math.max(1, Math.min(5, Math.round(Number(brief.rant) || 3))), format: ["monologue", "interview", "panel"].includes(brief.format) ? brief.format : "monologue", points: clip(brief.points, 3000) },
+      text, words: (text.match(/\S+/g) || []).length, author: old ? old.author : by, createdAt: old ? old.createdAt : now, updatedAt: now, updatedBy: by };
     await store.setJSON(key, script);
+    if (ideaId) { // writing a script moves its idea forward
+      try { const idea = await store.get(`ideas/${ideaId}.json`, { type: "json" }); if (idea && (idea.status === "new" || idea.status === "discussing")) { idea.status = "planned"; idea.updatedAt = now; idea.updatedBy = by; await store.setJSON(`ideas/${ideaId}.json`, idea); } } catch (err) {}
+    }
     return json({ ok: true, script });
   }
   if (b.action === "delete-script") {
@@ -240,8 +355,39 @@ async function handle(context) {
     await store.delete(`scripts/${id}.json`).catch(() => {});
     return json({ ok: true });
   }
+  if (b.action === "script-write") {
+    const brief = b.brief || {}, title = clip(brief.title, 200).trim();
+    if (!title) return json({ error: "Add a topic or title first." }, 400);
+    const minutes = Math.max(2, Math.min(60, Math.round(Number(brief.minutes) || 8))), rant = Math.max(1, Math.min(5, Math.round(Number(brief.rant) || 3)));
+    const tones = ["Energetic and conversational", "Dryly funny", "Dramatic storytelling", "Clear and classroom-friendly", "Sharp and argumentative"], tone = tones.includes(brief.tone) ? brief.tone : tones[0];
+    const formats = { monologue: "a solo monologue by the host", interview: "a host-led conversation with a guest, written as speaker turns labelled HOST: and GUEST:", panel: "a panel conversation, written as speaker turns labelled HOST:, GUEST 1: and GUEST 2:" };
+    const format = formats[brief.format] ? brief.format : "monologue";
+    let idea = "";
+    if (ID_RE.test(String(brief.ideaId || ""))) {
+      const i = await store.get(`ideas/${brief.ideaId}.json`, { type: "json" }).catch(() => null);
+      if (i) idea = " The episode grew out of this idea from the team. Idea: " + clip(i.title, 200) + ". Notes: " + clip(i.notes, 1500) + ". Team discussion: " + (i.comments || []).slice(-12).map(c => c.author.name + ": " + clip(c.text, 300)).join(" | ");
+    }
+    const input = "Write a ready-to-record podcast script for The Agastya Archive, an AP World History show. Topic/title: " + title + ". Course unit: " + (clip(brief.unit, 100) || "not specified") + ". Format: " + formats[format] + ". Target length: about " + minutes + " minutes at a natural speaking pace, roughly " + minutes * 135 + " words. Tone: " + tone + ". Rant level: " + rant + "/5, where 1 is lightly opinionated and 5 is a fiery, funny rant. Keep criticism aimed at historical choices, systems and arguments, never at people based on identity. Structure it with markdown headings exactly like this: '## Cold open', then two to five sections each headed '## Segment: <short name>', then '## Hot take', then '## Sign-off'. Finish with a section '## Questions' containing 5 to 8 discussion questions, one per line, each starting with 'Q: '. Use spoken language, short paragraphs that are easy to read aloud, and occasional concise delivery cues in brackets. Do not invent quotations, sources or facts; explain nuance where it matters. Return only the script." + (clip(brief.points, 2000) ? " The host wants these points covered: " + clip(brief.points, 2000) : "") + idea;
+    return startText(input, 8192);
+  }
+  if (b.action === "ai-edit-plan") {
+    const lines = Array.isArray(b.lines) ? b.lines.slice(0, 3000) : [], o = b.options || {};
+    if (lines.length < 3) return json({ error: "There isn’t enough transcript to analyse yet." }, 400);
+    const stamp = t => Math.floor(Number(t) / 60) + ":" + String(Math.floor(Number(t) % 60)).padStart(2, "0");
+    const wants = [];
+    if (o.falseStarts) wants.push("false starts, stumbles and repeated takes where the speaker says something again better");
+    if (o.tangents) wants.push("tangents and off-topic digressions that do not serve the episode");
+    if (o.filler) wants.push("rambling filler sentences that add nothing");
+    const target = Math.max(0, Math.min(240, Math.round(Number(o.targetMinutes) || 0)));
+    const input = "You are a careful podcast editor. Below is a transcript split into numbered lines with timestamps. Suggest cuts that make the episode tighter without losing meaning or the host's personality. Look for: " + (wants.join("; ") || "anything clearly worth cutting") + "." + (target ? " The edited episode should come in at about " + target + " minutes, so prioritise cutting the least important material." : "") + (clip(o.instruction, 300) ? " Extra instruction from the host: " + clip(o.instruction, 300) : "") + " Rules: cut only whole lines; be conservative; never cut the first two or last two lines; never cut a line that introduces or concludes a key point; at most 40 cuts. Respond with ONLY JSON in exactly this shape and nothing else: {\"cuts\":[{\"from\":<first line number>,\"to\":<last line number>,\"kind\":\"false_start|repeat|tangent|filler|other\",\"reason\":\"<short reason>\"}]}\n\nTRANSCRIPT:\n" + lines.map(l => "[" + Math.round(l.i) + "] (" + stamp(l.t) + ") " + clip(l.text, 300)).join("\n");
+    return startText(input, 4096);
+  }
+  if (b.action === "script-rewrite") {
+    const text = clip(b.text, 12000).trim(), instruction = clip(b.instruction, 500).trim();
+    if (!text || !instruction) return json({ error: "Select some text and say how to change it." }, 400);
+    return startText("Rewrite this excerpt of a podcast script for The Agastya Archive, an AP World History show. Instruction: " + instruction + ". Keep it easy to read aloud and keep any markdown headings and 'Q:' lines as they are. Do not invent quotations, sources or facts. Return only the rewritten excerpt, with no preamble. Context about the episode: " + clip(b.context, 1500) + "\n\nExcerpt:\n" + text, 4096);
+  }
 
-  // ---- drafts: an episode in progress (text, notes, transcript and optionally audio), never public ----
   if (b.action === "list-drafts") {
     const drafts = await readAll(store, "drafts/");
     return json({ drafts: drafts.sort(newestFirst).map(d => ({ id: d.id, title: d.title, unit: d.unit, desc: clip(d.desc, 200), hasNotes: !!d.notes, ideaId: d.ideaId || null,
@@ -271,9 +417,7 @@ async function handle(context) {
     const now = new Date().toISOString();
     const draft = { id, title: clip(e.title, 200).trim(), unit: clip(e.unit, 80), date: /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : "",
       rant: Math.min(5, Math.max(1, +e.rant || 3)), desc: clip(e.desc, 5000), script: clip(e.script, 200000), notes: clip(e.notes, 20000), transcript: clip(e.transcript, 200000),
-      transcriptWords: cleanWords(e.transcriptWords), chapters: clip(e.chapters, 5000), whenLocal: clip(e.whenLocal, 20),
-      mode: e.mode === "plain" ? "plain" : "ai",
-      liveCaptions: !!e.liveCaptions, skipAutoTranscript: !!e.skipAutoTranscript,
+      transcriptWords: cleanWords(e.transcriptWords), chapters: clip(e.chapters, 5000), whenLocal: clip(e.whenLocal, 20), introSeconds: Math.max(0, Math.min(300, Number(e.introSeconds) || 0)),
       ideaId: ID_RE.test(String(e.ideaId || "")) ? String(e.ideaId) : (old && old.ideaId) || null, audio,
       author: old ? old.author : by, createdAt: old ? old.createdAt : now, updatedAt: now, updatedBy: by };
     await store.setJSON(key, draft);
@@ -299,94 +443,9 @@ async function handle(context) {
   if (b.action === "discard-upload") {
     const id = String(b.id || "");
     if (!/^[a-z0-9]{6,20}$/.test(id)) return json({ error: "Bad upload id" }, 400);
-    const meta = await store.get(`audio-meta/${id}.json`, { type: "json" }).catch(() => null);
-    await dropAudio(store, id);
-    await store.delete(`audio-meta/${id}.json`).catch(() => {});
-    if (meta && meta.jobId) await store.delete(`enhance-jobs/${meta.jobId}.json`).catch(() => {});
+    const { blobs } = await store.list({ prefix: `audio/${id}/`, consistency: "strong" });
+    for (const item of blobs) await store.delete(item.key);
     return json({ ok: true });
-  }
-
-  if (b.action === "enhance-start") { // one-click Studio Sound via Resemble AI; the job is polled by enhance-status
-    if (!env.RESEMBLE_API_KEY) return json({ error: "AI enhancement is not set up. Add RESEMBLE_API_KEY to the cloud-function environment." }, 503);
-    const id = String(b.id || ""), parts = Math.floor(+b.parts), size = Math.floor(+b.size), maxEnhanceBytes = 100 * 1024 * 1024;
-    if (!ID_RE.test(id) || !(parts >= 1 && parts <= MAX_CHUNKS) || !(size > 0 && size <= maxEnhanceBytes)) return json({ error: "Audio must be between 1 byte and 100 MB to enhance." }, 400);
-    let upload;
-    try { upload = await readUpload(store, id, parts); } catch (e) { return json({ error: e.message }, 400); }
-    if (upload.size !== size) return json({ error: "Uploaded audio size does not match." }, 400);
-    const rawType = String(b.type || "").split(";")[0].trim(), type = /^audio\/[\w.+-]+$/.test(rawType) ? rawType : "audio/mpeg";
-    const ext = { "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/x-pn-wav": "wav", "audio/vnd.wave": "wav", "audio/mp4": "m4a", "audio/m4a": "m4a", "audio/x-m4a": "m4a", "audio/ogg": "ogg", "audio/aac": "aac", "audio/flac": "flac", "audio/x-flac": "flac" }[type] || "mp3";
-    const form = new FormData();
-    form.append("audio_file", new Blob(upload.chunks, { type }), `episode.${ext}`);
-    form.append("remove_noise", "true");
-    form.append("normalize", "true");
-    form.append("studio_sound", "true");
-    let response;
-    try { response = await fetch("https://app.resemble.ai/api/v2/audio_enhancements", { method: "POST", headers: { Authorization: `Bearer ${env.RESEMBLE_API_KEY}` }, body: form }); }
-    catch (e) { return json({ error: `Could not reach Resemble: ${e.message}` }, 502); }
-    const text = await response.text();
-    let data = {}; try { data = JSON.parse(text); } catch {}
-    if (!response.ok) return json({ error: data.message || data.error || `Resemble rejected the audio (HTTP ${response.status}).` }, 502);
-    const jobId = String(data.uuid || "");
-    if (!/^[A-Za-z0-9-]{6,80}$/.test(jobId)) return json({ error: "Resemble did not return a valid job id." }, 502);
-    const outputId = newId();
-    await store.setJSON(`enhance-jobs/${jobId}.json`, { id: outputId, sourceId: id, size, type, status: "pending", createdAt: new Date().toISOString() });
-    return json({ status: "pending", jobId, id: outputId });
-  }
-
-  if (b.action === "enhance-status") { // poll Resemble, then store the enhanced audio as a fresh upload
-    if (!env.RESEMBLE_API_KEY) return json({ error: "AI enhancement is not set up. Add RESEMBLE_API_KEY to the cloud-function environment." }, 503);
-    const jobId = String(b.jobId || "");
-    if (!/^[A-Za-z0-9-]{6,80}$/.test(jobId)) return json({ error: "Bad enhancement job" }, 400);
-    const jobKey = `enhance-jobs/${jobId}.json`, job = await store.get(jobKey, { type: "json" }).catch(() => null);
-    if (!job) return json({ error: "Enhancement job not found." }, 404);
-    if (job.status === "completed" && job.audio) return json({ status: "completed", audio: job.audio });
-    if (job.status === "failed") return json({ status: "failed", error: job.error || "Resemble could not enhance this audio." });
-    let response;
-    try { response = await fetch(`https://app.resemble.ai/api/v2/audio_enhancements/${encodeURIComponent(jobId)}`, { headers: { Authorization: `Bearer ${env.RESEMBLE_API_KEY}` } }); }
-    catch (e) { return json({ error: `Could not reach Resemble: ${e.message}` }, 502); }
-    const text = await response.text();
-    let data = {}; try { data = JSON.parse(text); } catch {}
-    if (!response.ok) return json({ error: data.message || data.error || `Resemble status check failed (HTTP ${response.status}).` }, 502);
-    if (data.status === "failed" || data.status === "error") {
-      job.status = "failed"; job.error = data.error_message || data.message || "Resemble could not enhance this audio.";
-      await store.setJSON(jobKey, job);
-      return json({ status: "failed", error: job.error });
-    }
-    if (data.status !== "completed" || !data.enhanced_audio_url) return json({ status: "processing" });
-    let audioResponse;
-    try { audioResponse = await fetch(data.enhanced_audio_url); }
-    catch (e) { return json({ error: `Could not download the enhanced audio: ${e.message}` }, 502); }
-    if (!audioResponse.ok) return json({ error: `Could not download the enhanced audio (HTTP ${audioResponse.status}).` }, 502);
-    const length = Number(audioResponse.headers.get("content-length")) || 0;
-    let audio;
-    try {
-      if (!audioResponse.body || typeof audioResponse.body.getReader !== "function" || (length > 0 && length <= 64 * 1024 * 1024)) {
-        const wav = new Uint8Array(await audioResponse.arrayBuffer());
-        if (!wav.byteLength) return json({ error: "Resemble returned an empty audio file." }, 502);
-        let bytes = wav, mime = "audio/wav";
-        try { bytes = wavToMp3(wav); mime = "audio/mpeg"; } catch {}
-        const count = Math.ceil(bytes.byteLength / CHUNK);
-        if (count > MAX_CHUNKS) return json({ error: "The enhanced audio is too large to store." }, 502);
-        for (let i = 0; i < count; i++) await store.set(`audio/${job.id}/${pad(i)}`, bytes.slice(i * CHUNK, Math.min(bytes.byteLength, (i + 1) * CHUNK)).buffer);
-        audio = { id: job.id, parts: count, size: bytes.byteLength, type: mime };
-      } else {
-        let part = 0;
-        const stored = await streamWavToMp3(audioResponse.body, async bytes => {
-          if (part >= MAX_CHUNKS) throw new Error("The enhanced audio is too large to store.");
-          await store.set(`audio/${job.id}/${pad(part++)}`, bytes.buffer);
-        });
-        audio = { id: job.id, parts: stored.parts, size: stored.size, type: "audio/mpeg" };
-      }
-    } catch (e) {
-      await dropAudio(store, job.id).catch(() => {});
-      job.status = "failed"; job.error = `Could not save the enhanced audio: ${e.message}`;
-      await store.setJSON(jobKey, job);
-      return json({ status: "failed", error: job.error });
-    }
-    await store.setJSON(`audio-meta/${job.id}.json`, { ...audio, jobId, createdAt: new Date().toISOString() });
-    job.status = "completed"; job.audio = audio;
-    await store.setJSON(jobKey, job);
-    return json({ status: "completed", audio });
   }
 
   if (b.action === "transcribe") {
@@ -549,40 +608,6 @@ async function handle(context) {
     if (!chapters.length) return json({ error: "Gemini returned no usable chapters." }, 502);
     if (chapters[0].time > 10) chapters.unshift({ time: 0, title: "Introduction" });
     return json({ status, chapters });
-  }
-
-  if (b.action === "cleanup-transcript") {
-    if (!env.GEMINI_API_KEY) return json({ error: "AI is not configured. Add GEMINI_API_KEY to the cloud-function environment." }, 503);
-    const transcript = String(b.transcript || "").trim(), duration = Number(b.duration), introSeconds = Math.max(0, Number(b.introSeconds) || 0);
-    if (!transcript) return json({ error: "Add a transcript first." }, 400);
-    if (transcript.length > 120000) return json({ error: "This transcript is too long to clean up in one go. Split it into smaller episodes." }, 400);
-    const segments = (Array.isArray(b.segments) ? b.segments : []).slice(0, 600).map(segment => {
-      const time = Number(segment && segment.time), text = String(segment && segment.text || "").trim().slice(0, 1200);
-      return Number.isFinite(time) && time >= 0 && text ? "[" + Math.floor(time / 60) + ":" + String(Math.floor(time % 60)).padStart(2, "0") + "] " + text : "";
-    }).filter(Boolean).join("\n").slice(0, 80000);
-    const example = JSON.stringify({ cleaned: "Cleaned transcript", cuts: [{ start: 12.5, end: 13.8, reason: "filler words" }] });
-    const input = "Edit this podcast transcript for a clean published version. Remove filler words such as um, uh and like when they are not meaningful, remove obvious false starts and repeated words, and fix punctuation and capitalization. Do not change the meaning, remove facts, or invent new words. Return only valid JSON in this shape: " + example + ". The cuts array lists short audio ranges that should be removed from the recording because they contain only filler, a false start or a long pause. Times are seconds from the start of the audio and must be at least " + Math.ceil(introSeconds) + " seconds into the episode (the intro music is locked). Never include overlapping cuts, never cut more than 20% of the episode, and return an empty cuts array when unsure. Episode: " + String(b.title || "").slice(0, 200) + ". Audio duration: " + Math.round(duration) + " seconds.\n\nTimestamped transcript:\n" + (segments || transcript.slice(0, 80000)) + "\n\nFull transcript:\n" + transcript.slice(0, 80000);
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(env.GEMINI_TEXT_MODEL || "gemini-3.8-flash") + ":generateContent", {
-      method: "POST", headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: input }] }], generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 16384 } })
-    });
-    let result = {}; try { result = await response.json(); } catch {}
-    if (!response.ok) return json({ error: result.error?.message || `Transcript cleanup failed (HTTP ${response.status}).` }, 502);
-    const text = (result.candidates || []).flatMap(item => item.content?.parts || []).map(part => part.text || "").join("\n").trim();
-    const parsed = parseJsonText(text);
-    if (!parsed || typeof parsed.cleaned !== "string" || !parsed.cleaned.trim()) return json({ error: "Gemini didn’t return a cleaned transcript." }, 502);
-    const cuts = (Array.isArray(parsed.cuts) ? parsed.cuts : []).map(cut => ({ start: Number(cut.start), end: Number(cut.end), reason: clip(cut.reason, 120).trim() || "Suggested cleanup" }))
-      .filter(cut => Number.isFinite(cut.start) && Number.isFinite(cut.end) && cut.end > cut.start + 0.1 && cut.start >= introSeconds && (!duration || cut.end <= duration))
-      .sort((a, c) => a.start - c.start).slice(0, 60);
-    const merged = [];
-    for (const cut of cuts) {
-      const last = merged[merged.length - 1];
-      if (last && cut.start <= last.end + 0.5) { last.end = Math.max(last.end, cut.end); continue; }
-      merged.push({ ...cut });
-    }
-    const totalCut = merged.reduce((sum, cut) => sum + cut.end - cut.start, 0);
-    const usable = duration > 0 && totalCut > duration * 0.2 ? [] : merged;
-    return json({ cleaned: parsed.cleaned.trim().slice(0, 120000), cuts: usable });
   }
 
   if (b.action === "describe") {

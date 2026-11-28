@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scripts · Agastya Archive Host</title>
+<meta name="robots" content="noindex,nofollow">
+<script src="/site-config.js"></script>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link rel="stylesheet" href="/host/host.css">
+<link rel="stylesheet" href="/host/extras.css">
+</head>
+<body data-page="scripts">
+<div id="hdr"></div><div id="gate"></div>
+<main class="hmain" id="app" hidden>
+  <div class="ptitle"><div><h1>Scripts</h1><p>Turn an idea into a full episode script with AI, edit it, then send it to the Record tab or the live room.</p></div><button class="go" id="scNew" type="button">New script</button></div>
+  <div class="sc-layout">
+    <aside class="sc-list card"><input id="scSearch" class="search" type="search" placeholder="Search scripts" aria-label="Search scripts"><div id="scList"></div></aside>
+    <section class="sc-main">
+      <div id="scEmpty" class="empty">Pick a script on the left, or start a new one. Starting from an idea on the Ideas tab fills in the topic and notes for you.</div>
+      <div id="scEditor" hidden>
+        <section class="card hf sc-brief">
+          <div class="field-head"><h2>Brief</h2><span class="fine" id="scSaved"></span></div>
+          <label for="scTitle">Episode topic or title</label><input id="scTitle" maxlength="200" placeholder="e.g. The Mongols were not just raiders">
+          <div class="r2"><div><label for="scIdea">Linked idea</label><select id="scIdea"></select></div><div><label for="scUnit">AP World unit</label><select id="scUnit"></select></div></div>
+          <div class="r2"><div><label for="scMinutes">Length</label><select id="scMinutes"><option value="3">About 3 minutes</option><option value="5">About 5 minutes</option><option value="8" selected>About 8 minutes</option><option value="10">About 10 minutes</option><option value="15">About 15 minutes</option><option value="20">About 20 minutes</option><option value="30">About 30 minutes</option><option value="45">About 45 minutes</option></select></div>
+            <div><label for="scFormat">Format</label><select id="scFormat"><option value="monologue">Solo monologue</option><option value="interview">Host and guest interview</option><option value="panel">Panel conversation</option></select></div></div>
+          <div class="r2"><div><label for="scTone">Tone</label><select id="scTone"></select></div><div><label for="scRant">Rant level</label><select id="scRant"><option value="1">1 · lightly opinionated</option><option value="2">2</option><option value="3" selected>3 · spicy</option><option value="4">4</option><option value="5">5 · full rant</option></select></div></div>
+          <label for="scPoints">Points to cover (optional)</label><textarea id="scPoints" maxlength="3000" placeholder="Facts, angles or sources you want in the script"></textarea>
+          <details id="scIdeaCtx" class="sc-ctx" hidden><summary>What the team said about this idea</summary><div id="scIdeaBody"></div></details>
+          <div class="acts"><button class="go" id="scGenerate" type="button">Write the script with AI</button><span id="scGenStatus" class="mute" role="status" aria-live="polite"></span></div>
+        </section>
+        <section class="card hf sc-script">
+          <div class="field-head"><h2>Script</h2><span class="sc-meter"><b id="scWords">0 words</b> · <span id="scTime">0:00</span> read aloud <span id="scTarget"></span></span></div>
+          <div class="sc-body"><textarea id="scText" spellcheck="true" placeholder="Your script appears here. You can also write or paste your own."></textarea><nav id="scOutline" class="sc-outline" aria-label="Script outline"></nav></div>
+          <div class="sc-tools">
+            <input id="scInstr" maxlength="500" placeholder="Select some text, then say how to change it (shorter, funnier, more fiery…)" aria-label="How to rewrite the selected text">
+            <button type="button" id="scRewrite">Rewrite selection</button><button type="button" id="scUndo" hidden>Undo AI change</button>
+          </div>
+          <div class="acts"><button class="go" id="scSave" type="button">Save</button><button type="button" id="scSendRecord">Open in Record</button><button type="button" id="scSendLive">Use questions in Live</button><button type="button" id="scCopy">Copy</button><button type="button" class="danger" id="scDelete">Delete</button><span id="scMsg" class="mute" role="status" aria-live="polite"></span></div>
+          <div id="scTTS"></div>
+        </section>
+      </div>
+    </section>
+  </div>
+</main>
+<script src="/emoji.js"></script>
+<script src="/host/shell.js"></script>
+<script src="/host/tts.js"></script>
+<script src="/host/scripts.js"></script>
+</body></html>

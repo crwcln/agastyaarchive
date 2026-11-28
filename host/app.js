@@ -1,13 +1,11 @@
 // Load each host tool into a shared shell and keep its state alive while switching views.
 HOST.ready(()=>{
-  const F=HOST.features,names=["dashboard","record",...(F.hostIdeas!==false?["ideas"]:[]),...(F.scriptMaker!==false?["script"]:[]),...(F.liveStudio!==false?["live"]:[])],$=id=>document.getElementById(id),panels=Object.fromEntries(["dashboard","record","ideas","script","live"].map(name=>[name,$("workspace-"+name)]));
-  const sources={dashboard:"/host/dashboard-view.html",record:"/host/record.html",ideas:"/host/ideas.html",script:"/host/script.html",live:"/host/live.html"};
-  const scripts={dashboard:["/host/dashboard.js"],record:["/host/studio.js","/host/editor.js","/host/live-store.js","/host/record.js"],ideas:["/host/tts.js","/host/ideas.js"],script:["/host/script.js"],live:["/host/live.js"]};
+  const $=id=>document.getElementById(id),allNames=["dashboard","record","ideas","scripts","live"],on={ideas:HOST.features.hostIdeas!==false,scripts:HOST.features.hostScripts!==false,live:HOST.features.hostLive!==false};
+  const names=allNames.filter(n=>on[n]!==false),panels=Object.fromEntries(allNames.map(name=>[name,$("workspace-"+name)]));
+  const sources={dashboard:"/host/dashboard-view.html",record:"/host/record.html",ideas:"/host/ideas.html",scripts:"/host/scripts.html",live:"/host/live.html"};
+  const scripts={dashboard:["/host/dashboard.js"],record:["/host/studio.js","/host/editor.js","/host/captions.js","/host/aiedit.js","/host/record.js"],ideas:["/host/tts.js","/host/ideas.js"],scripts:["/host/tts.js","/host/scripts.js"],live:["/host/live.js"]};
   const loadedScripts=new Set(),pendingScripts=new Map();let active="dashboard",touchX=null;
-  [["ideas",F.hostIdeas],["script",F.scriptMaker],["live",F.liveStudio]].forEach(([name,flag])=>{
-    document.querySelector('[data-view="'+name+'"]').hidden=flag===false;
-    $("workspace-"+name).hidden=flag===false;
-  });
+  allNames.filter(n=>!names.includes(n)).forEach(n=>{const tab=document.querySelector('[data-view="'+n+'"]');if(tab)tab.hidden=true;if(panels[n])panels[n].hidden=true});
   $("workspaceTrack").style.width=(names.length*100)+"%";
   names.forEach(name=>{panels[name].style.flexBasis=(100/names.length)+"%"});
   function parseRoute(){
@@ -67,9 +65,10 @@ HOST.ready(()=>{
     const anchor=event.target.closest("a[href]");if(!anchor||anchor.target||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
     const url=new URL(anchor.href,location.href);if(url.origin!==location.origin||!url.pathname.startsWith("/host/"))return;
     let name=url.hash?url.hash.replace(/^#\/?/,"").split("?")[0]:"";
-    if(!names.includes(name))name=["record","ideas","script","live"].find(key=>url.pathname.includes(key))||"dashboard";
-    if(!names.includes(name))return;
-    event.preventDefault();goto(name,url.searchParams.toString());
+    if(!names.includes(name))name=["record","ideas","scripts","live"].find(n=>url.pathname.includes(n)&&names.includes(n))||"dashboard";
+    if(name==="ideas"&&HOST.features.hostIdeas===false)return;
+    const hashQuery=url.hash.includes("?")?url.hash.slice(url.hash.indexOf("?")+1):"";
+    event.preventDefault();goto(name,hashQuery||url.searchParams.toString());
   });
   window.addEventListener("hashchange",route);
   $("workspaceSlider").addEventListener("touchstart",event=>{if(event.touches.length===1)touchX=event.touches[0].clientX},{passive:true});

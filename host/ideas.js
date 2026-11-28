@@ -3,7 +3,7 @@ HOST.ready(()=>{
 const {api}=HOST,me=HOST.who(),$=id=>document.getElementById(id);
 const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){if(x==="class")e.className=a[x];else if(x.startsWith("on"))e[x]=a[x];else e.setAttribute(x,a[x])}for(const c of k.flat())if(c!=null&&c!==false)e.append(c);return e};
 const STATUS=[["new","New"],["discussing","Discussing"],["planned","Planned"],["recorded","Recorded"],["parked","Parked"]];
-let ideas=[],filter="all",q="",sig="",baseline="";
+let scriptsByIdea={},ideas=[],filter="all",q="",sig="",baseline="";
 try{baseline=localStorage.getItem("aa_ideas_seen")||""}catch(e){}
 const say=t=>$("itStatus").textContent=t;
 let generation=0;
@@ -19,7 +19,9 @@ const fresh=i=>!!baseline&&Date.parse(i.updatedAt)>Date.parse(baseline)&&i.updat
 
 async function load(){
   try{
-    const d=await api({action:"list-ideas"}),next=JSON.stringify(d.ideas.map(i=>[i.id,i.updatedAt,i.status,i.comments.length]));
+    const [d,sc]=await Promise.all([api({action:"list-ideas"}),HOST.features.hostScripts===false?{scripts:[]}:api({action:"list-scripts"}).catch(()=>({scripts:[]}))]);
+    scriptsByIdea={};sc.scripts.forEach(s=>{if(s.ideaId)(scriptsByIdea[s.ideaId]=scriptsByIdea[s.ideaId]||[]).push(s)});
+    const next=JSON.stringify([d.ideas.map(i=>[i.id,i.updatedAt,i.status,i.comments.length]),sc.scripts.map(s=>[s.id,s.updatedAt])]);
     ideas=d.ideas;if(next!==sig){sig=next;render()}say("");
   }catch(e){say("Couldn’t load ideas: "+e.message)}
 }
@@ -38,7 +40,8 @@ function card(i){
     h("div",{class:"idea-top"},h("div",null,h("h3",null,i.title,fresh(i)?h("span",{class:"badge"},"New"):null),
       h("div",{class:"sub"},byline(i.author)+" · "+ago(i.createdAt)+(i.updatedAt!==i.createdAt?" · updated "+ago(i.updatedAt):""))),sel),
     i.notes?h("p",{class:"notes"},i.notes):null,
-    h("div",{class:"idea-acts"},h("a",{class:"btn go",href:"/host/record.html?idea="+encodeURIComponent(i.id)},"Start episode"),h("a",{class:"btn",href:"/host/#script?idea="+encodeURIComponent(i.id)},"Write script"),h("a",{class:"btn",href:"/host/#live"},"Go live"),read,del),
+    h("div",{class:"idea-acts"},h("a",{class:"btn go",href:"/host/record.html?idea="+encodeURIComponent(i.id)},"Start episode"),HOST.features.hostScripts===false?null:h("a",{class:"btn",href:"#scripts?idea="+encodeURIComponent(i.id)},(scriptsByIdea[i.id]||[]).length?"Open script":"Write script"),read,del),
+    (scriptsByIdea[i.id]||[]).length?h("div",{class:"idea-scripts"},"Scripts: ",...scriptsByIdea[i.id].map(s=>h("a",{class:"sc-chip-link",href:"#scripts?open="+encodeURIComponent(s.id)},s.title+" ("+s.words+" words)"))):null,
     h("div",{class:"thread"},...i.comments.map(c=>h("div",{class:"cmt"},h("b",null,c.author.name,h("span",null,c.author.role+" · "+ago(c.at))),h("p",null,c.text))),
       h("div",{class:"cmt-form"},input,h("button",{type:"button",onclick:send},"Send"))));
 }
@@ -94,8 +97,7 @@ $("itGenerate").addEventListener("click",async()=>{
             try{await api({action:"save-idea",title,notes});add.textContent="Added to idea board";$("itMsg").textContent="Generated idea added to the shared board.";load()}
             catch(error){add.disabled=false;status.textContent="Couldn’t add idea: "+error.message}
           }},"Add to idea board"),
-          h("a",{class:"btn",href:"/host/record.html?title="+encodeURIComponent(title)+"&unit="+encodeURIComponent(unit)},"Start episode"),
-          h("a",{class:"btn",href:"/host/#script?title="+encodeURIComponent(title)+"&unit="+encodeURIComponent(unit)+"&notes="+encodeURIComponent(notes)},"Write script")));
+          h("a",{class:"btn",href:"/host/record.html?title="+encodeURIComponent(title)+"&unit="+encodeURIComponent(unit)},"Start episode")));
       results.append(card);
     });
     status.textContent=results.childElementCount?"Here are some starting points. Refine them or add one to the shared board.":"The generator returned no usable ideas.";

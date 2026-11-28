@@ -1,258 +1,272 @@
-// Live studio (host): WebRTC mesh with the host mic mixed into one MediaRecorder stream.
+// Live room (host side). Guests connect to you over WebRTC; you mix everyone (plus sound effects) in the browser,
+// record the mix, and send each guest a "mix-minus" (everyone except themselves) so nobody hears an echo.
 HOST.ready(()=>{
-const {api}=HOST,$=id=>document.getElementById(id),HOST_TOKEN="0".repeat(32);
-let roomId=null,since=0,pollTimer=null,peers=[],peerConns=new Map(),localStream=null,ctx=null,mixDest=null,micNode=null;
-let recorder=null,chunks=[],recBlob=null,recording=false,paused=false,recStart=0,accum=0,clockTimer=null;
-let timerRunning=false,timerSeconds=0,timerBase=0,timerTimer=null,ended=false;
-const seenEvents=new Set();
-const status=t=>{$("lvStatus").textContent=t};
-async function liveApi(body){
-  const r=await fetch("/api/live",{method:"POST",headers:{"Content-Type":"application/json","x-admin-password":HOST.pw()},body:JSON.stringify(body)});
-  const text=await r.text();let d={};try{d=JSON.parse(text)}catch(e){}
-  if(!r.ok)throw new Error(d.error||"HTTP "+r.status);
-  return d;
+const {api,features:F}=HOST,me=HOST.who(),$=id=>document.getElementById(id);
+const h=(t,a,...k)=>{const e=document.createElement(t);for(const x in a||{}){const v=a[x];if(v===false||v==null)continue;if(x==="class")e.className=v;else if(x.startsWith("on"))e[x]=v;else e.setAttribute(x,v===true?"":v)}for(const c of k.flat())if(c!=null&&c!==false)e.append(c);return e};
+const ICE=F.rtcIceServers||[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}];
+const clockS=s=>{s=Math.max(0,Math.floor(s));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
+const msg=t=>$("lvSetupMsg").textContent=t,uid=()=>Math.random().toString(36).slice(2,10);
+let room=null,ctx=null,micStream=null,sources={},recBus=null,recDest=null,monBus=null,peers=new Map(),dismissed=new Set(),pollTimer=0;
+let questions=[],shownQ=null,qNext=0,timer={state:"idle",remaining:0,endsAt:0},introPlaying=false,hostMuted=false,introBuf=null;
+let recorder=null,chunks=[],recState="idle",acc=0,t0=0,markers=[],finished=null,pubTimer=0,noiseBuf=null;
+try{questions=JSON.parse(localStorage.getItem("aa_live_questions")||"[]").filter(q=>q&&q.text)}catch(e){}
+const saveQs=()=>{try{localStorage.setItem("aa_live_questions",JSON.stringify(questions))}catch(e){}};
+
+/* ---------- the mixing desk ---------- */
+async function startEngine(){
+  ctx=new (window.AudioContext||window.webkitAudioContext)();await ctx.resume();
+  micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+  recBus=ctx.createGain();recDest=ctx.createMediaStreamDestination();recBus.connect(recDest);
+  monBus=ctx.createGain();monBus.connect(ctx.destination);
+  addSource("host",ctx.createMediaStreamSource(micStream),{rec:true,mon:false,guests:true});
+  addSource("sfx",ctx.createGain(),{rec:true,mon:true,guests:true});
+  addSource("intro",ctx.createGain(),{rec:false,mon:true,guests:true}); // the intro is heard live but never recorded: the editor adds it when you publish
 }
-const clock=s=>{s=Math.max(0,Math.floor(s));return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")};
-const recElapsed=()=>accum+(recording&&!paused?(Date.now()-recStart)/1000:0);
-const timerElapsed=()=>timerSeconds+(timerRunning?(Date.now()-timerBase)/1000:0);
-function tick(){
-  $("lvClock").textContent=clock(recElapsed());
-  $("lvTimer").textContent=clock(timerElapsed());
+function addSource(id,input,flags){
+  const out=ctx.createGain();input.connect(out);const an=ctx.createAnalyser();an.fftSize=512;
+  sources[id]={id,input,out,an,level:0,...flags};rewire();return sources[id];
 }
-setInterval(tick,250);
-async function ensureMic(){
-  if(localStream)return localStream;
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error("This browser can’t use a microphone.");
-  localStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
-  const AC=window.AudioContext||window.webkitAudioContext;
-  ctx=ctx||new AC();await ctx.resume();
-  mixDest=ctx.createMediaStreamDestination();
-  micNode=ctx.createGain();micNode.gain.value=1;
-  ctx.createMediaStreamSource(localStream).connect(micNode);micNode.connect(mixDest);
-  return localStream;
+function rewire(){ // who is sent where
+  for(const s of Object.values(sources)){
+    s.out.disconnect();s.out.connect(s.an);
+    if(s.rec)s.out.connect(recBus);
+    if(s.mon)s.out.connect(monBus);
+    if(s.guests)for(const p of peers.values())if(p.bus&&p.gid!==s.id)s.out.connect(p.bus);
+  }
+  applyGains();
 }
-function note(text,error){
-  const log=$("lvChatLog"),line=document.createElement("div");line.className="lv-msg";
-  const b=document.createElement("b");b.textContent="System";line.append(b,document.createTextNode(" "+text));
-  log.append(line);log.scrollTop=log.scrollHeight;
-  if(error){status(text);HOST.notify(text,"error")}
-}
-function appendChat(event){
-  const log=$("lvChatLog"),line=document.createElement("div");
-  line.className="lv-msg"+(event.question?" question":"");
-  const b=document.createElement("b");b.textContent=event.name||"Guest";
-  line.append(b,document.createTextNode(": "+event.text));
-  log.append(line);log.scrollTop=log.scrollHeight;
-}
-function renderPeers(){
-  const box=$("lvPeers");box.replaceChildren();
-  if(!peers.length){box.append(Object.assign(document.createElement("p"),{className:"mute",textContent:"No guests yet. Share the invite link above."}));return}
-  peers.forEach(peer=>{
-    const row=document.createElement("div");row.className="lv-peer";
-    const dot=document.createElement("i"),name=document.createElement("span"),when=document.createElement("small");
-    name.textContent=peer.name;when.textContent="joined "+new Date(peer.joinedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
-    row.append(dot,name,when);box.append(row);
-  });
-}
-function controls(on){
-  ["lvEnd","lvPause","lvStop","lvShowQuestion","lvClearQuestion","lvSendChat","lvTimerStart","lvTimerPause","lvTimerReset"].forEach(id=>$(id).disabled=!on);
-  document.querySelectorAll(".lv-sfx button").forEach(b=>b.disabled=!on);
-  $("lvRecord").disabled=!on||recording;
-}
-async function sendSignal(to,data){try{await liveApi({action:"signal",room:roomId,from:HOST_TOKEN,to,data})}catch(e){note("Couldn’t signal a guest: "+e.message,true)}}
-async function connectGuest(peer){
-  if(peerConns.has(peer.id)||!localStream)return;
-  const entry={pc:null,pending:[]};peerConns.set(peer.id,entry);
-  try{
-    await ensureMic();
-    const pc=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]});
-    entry.pc=pc;
-    localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
-    pc.onicecandidate=e=>{if(e.candidate)sendSignal(peer.id,{type:"candidate",candidate:e.candidate.toJSON?e.candidate.toJSON():{candidate:e.candidate.candidate,sdpMid:e.candidate.sdpMid,sdpMLineIndex:e.candidate.sdpMLineIndex}})};
-    pc.ontrack=e=>{
-      const source=ctx.createMediaStreamSource(e.streams[0]||new MediaStream([e.track])),gain=ctx.createGain();
-      gain.gain.value=1;source.connect(gain);gain.connect(mixDest);entry.audio=gain;
-      note(peer.name+"’s microphone is connected.");
-    };
-    pc.onconnectionstatechange=()=>{if(pc.connectionState==="failed")note(peer.name+"’s connection failed. They may need to rejoin.",true)};
-    const offer=await pc.createOffer();await pc.setLocalDescription(offer);
-    await sendSignal(peer.id,{type:"offer",sdp:pc.localDescription});
-  }catch(e){peerConns.delete(peer.id);note("Couldn’t connect "+peer.name+": "+e.message,true)}
-}
-function disconnectGuest(id){
-  const entry=peerConns.get(id);if(!entry)return;
-  try{entry.pc&&entry.pc.close()}catch(e){}
-  try{entry.audio&&entry.audio.disconnect()}catch(e){}
-  peerConns.delete(id);
-}
-async function applySignal(event){
-  const entry=peerConns.get(event.from);if(!entry||!entry.pc)return;
-  const data=event.data||{};
-  try{
-    if(data.type==="answer"){
-      if(entry.pc.signalingState!=="have-local-offer")return;
-      await entry.pc.setRemoteDescription(data.sdp);
-      for(const candidate of entry.pending.splice(0))await entry.pc.addIceCandidate(candidate).catch(()=>{});
-    }else if(data.type==="candidate"){
-      if(entry.pc.remoteDescription)await entry.pc.addIceCandidate(data.candidate);
-      else entry.pending.push(data.candidate);
-    }
-  }catch(e){note("A guest signal couldn’t be applied: "+e.message,true)}
-}
-function processEvents(events){
-  for(const event of events){
-    if(event.seq!=null){if(seenEvents.has(event.seq))continue;seenEvents.add(event.seq)}
-    if(event.type==="join"){note(event.name+" joined the room.");continue}
-    if(event.type==="leave"){disconnectGuest(event.from);note(event.name+" left the room.");continue}
-    if(event.type==="signal"&&event.to===HOST_TOKEN){applySignal(event);continue}
-    if(event.type==="chat"){appendChat(event);continue}
-    if(event.type==="question"){
-      const text=String(event.text||"");$("lvQuestion").value=text;
-      $("lvOverlay")&&($("lvOverlay").hidden=true);note(text?"Question shown to guests.":"On-screen text cleared.");continue
-    }
-    if(event.type==="timer"){timerRunning=!!event.running;timerSeconds=Number(event.seconds)||0;timerBase=Date.now();continue}
-    if(event.type==="end"){finishRoom(true);continue}
+function applyGains(){
+  for(const s of Object.values(sources)){
+    let g=1;
+    if(s.id==="host")g=hostMuted?0:1;
+    else if(s.id!=="sfx"&&s.id!=="intro"){const p=peers.get(s.id);g=p&&p.mutedByHost?0:1}
+    if(introPlaying&&s.id!=="intro")g=0; // nothing is ever played over the intro
+    s.out.gain.value=g;
   }
 }
-async function poll(){
-  if(!roomId||ended)return;
+const rms=an=>{const b=new Uint8Array(an.fftSize);an.getByteTimeDomainData(b);let m=0;for(const v of b)m=Math.max(m,Math.abs(v-128));return m/128};
+setInterval(()=>{ // meters
+  for(const s of Object.values(sources))s.level=rms(s.an);
+  document.querySelectorAll("[data-meter]").forEach(el=>{const s=sources[el.dataset.meter];el.style.width=s?Math.min(100,s.level*150)+"%":"0%"});
+},100);
+
+/* ---------- people ---------- */
+const connectedPeers=()=>[...peers.values()].filter(p=>p.state==="connected");
+function sendTo(p,o){if(p.dc&&p.dc.readyState==="open")p.dc.send(JSON.stringify(o))}
+function broadcast(o){peers.forEach(p=>sendTo(p,o))}
+function roster(){return[{id:"host",name:me.name,host:true,muted:hostMuted},...connectedPeers().map(p=>({id:p.gid,name:p.name,muted:p.mutedByHost||p.selfMuted}))]}
+const sendRoster=()=>broadcast({t:"roster",list:roster()});
+function ensurePeer(g){
+  if(peers.has(g.gid))return peers.get(g.gid);
+  const p={gid:g.gid,name:g.name,state:"lobby",mutedByHost:false,selfMuted:false,since:0,sigQueue:Promise.resolve(),pendingIce:[]};peers.set(g.gid,p);renderPeople();return p;
+}
+function sig(p,kind,data){p.sigQueue=p.sigQueue.then(()=>api({action:"room-send-host",code:room.code,gid:p.gid,kind,data})).catch(()=>{})}
+async function admit(p){
+  await api({action:"room-admit",code:room.code,gid:p.gid,status:"in"});
+  p.state="connecting";renderPeople();
+  p.bus=ctx.createGain();p.dest=ctx.createMediaStreamDestination();p.bus.connect(p.dest);rewire();
+  const pc=p.pc=new RTCPeerConnection({iceServers:ICE}),dc=p.dc=pc.createDataChannel("room");
+  dc.onopen=()=>{sendTo(p,stateMsg());sendRoster()};
+  dc.onmessage=e=>{try{fromGuest(p,JSON.parse(e.data))}catch(x){}};
+  pc.addTrack(p.dest.stream.getAudioTracks()[0],p.dest.stream);
+  pc.ontrack=e=>{
+    if(sources[p.gid])return;const stream=e.streams[0]||new MediaStream([e.track]);
+    p.audioEl=new Audio();p.audioEl.srcObject=stream;p.audioEl.muted=true;p.audioEl.play().catch(()=>{}); // Chrome only feeds remote audio to Web Audio when it is attached to a media element
+    addSource(p.gid,ctx.createMediaStreamSource(stream),{rec:true,mon:$("lvMonitor").checked,guests:true});renderPeople();
+  };
+  pc.onicecandidate=e=>{if(e.candidate)sig(p,"ice",e.candidate.toJSON())};
+  pc.onconnectionstatechange=()=>{
+    const s=pc.connectionState;
+    if(s==="connected"){p.state="connected";renderPeople();renderStatus();sendRoster();sendTo(p,stateMsg())}
+    else if(s==="failed"||s==="closed")dropPeer(p);
+  };
+  const offer=await pc.createOffer();await pc.setLocalDescription(offer);sig(p,"offer",pc.localDescription.toJSON());
+}
+function dropPeer(p){
+  if(!peers.has(p.gid))return;dismissed.add(p.gid);
+  try{p.pc&&p.pc.close()}catch(e){}
+  const s=sources[p.gid];if(s){s.out.disconnect();delete sources[p.gid]}
+  if(p.bus){p.bus.disconnect();p.bus=null}
+  if(p.audioEl){p.audioEl.srcObject=null}
+  peers.delete(p.gid);rewire();renderPeople();renderStatus();sendRoster();
+}
+async function decline(p,notify){try{await api({action:"room-admit",code:room.code,gid:p.gid,status:"kicked"})}catch(e){}if(notify)sendTo(p,{t:"kick"});dropPeer(p)}
+async function onSignal(p,it){
+  if(it.kind==="answer"&&p.pc){await p.pc.setRemoteDescription(it.data);for(const c of p.pendingIce.splice(0)){try{await p.pc.addIceCandidate(c)}catch(e){}}}
+  else if(it.kind==="ice"&&p.pc){if(p.pc.remoteDescription){try{await p.pc.addIceCandidate(it.data)}catch(e){}}else p.pendingIce.push(it.data)}
+  else if(it.kind==="bye")dropPeer(p);
+}
+function fromGuest(p,m){
+  if(m.t==="hello"){if(m.name)p.name=String(m.name).slice(0,40);p.selfMuted=!!m.muted;renderPeople();sendRoster()}
+  else if(m.t==="muted"){p.selfMuted=!!m.muted;renderPeople();sendRoster()}
+  else if(m.t==="chat"&&String(m.text||"").trim())postChat(p.name,String(m.text).slice(0,400));
+}
+async function pollRoom(){
+  if(!room)return;
   try{
-    const data=await liveApi({action:"poll",room:roomId,peer:HOST_TOKEN,since});
-    since=data.since;peers=data.peers||[];
-    peers.forEach(peer=>connectGuest(peer));
-    processEvents(data.events||[]);renderPeers();
-  }catch(e){
-    if(/ended|incorrect/i.test(e.message))finishRoom(true);
-    else console.warn("Live poll:",e);
-  }
+    const since={};peers.forEach(p=>since[p.gid]=p.since);
+    const r=await api({action:"room-host-poll",code:room.code,watch:[...peers.values()].filter(p=>p.state==="connecting").map(p=>p.gid),since});
+    r.guests.forEach(g=>{if(!dismissed.has(g.gid)&&!peers.has(g.gid))ensurePeer(g)});
+    for(const [gid,items] of Object.entries(r.sig)){const p=peers.get(gid);if(!p)continue;for(const it of items){p.since=Math.max(p.since,it.n);await onSignal(p,it)}}
+  }catch(e){if(/ended/i.test(e.message)){closeRoomUi("The room has ended.");return}}
+  pollTimer=setTimeout(pollRoom,1500);
 }
-function finishRoom(byGuest){
-  ended=true;clearInterval(pollTimer);pollTimer=null;
-  if(recording&&recorder){
-    accum+=paused?0:Date.now()-recStart;recording=false;paused=false;
-    if(recorder.state!=="inactive"){try{recorder.stop()}catch(e){}}
-  }
-  peers.forEach(peer=>disconnectGuest(peer.id));peers=[];renderPeers();controls(false);
-  $("lvOnair").className="lv-onair";$("lvOnairText").textContent="Room ended";
-  status(byGuest?"The room has ended.":"Room ended.");
+function renderPeople(){
+  const lobby=$("lvLobby"),box=$("lvPeople");lobby.replaceChildren();box.replaceChildren();
+  const waiting=[...peers.values()].filter(p=>p.state==="lobby");
+  if(waiting.length)lobby.append(h("p",{class:"fine"},"Waiting to join:"));
+  waiting.forEach(p=>lobby.append(h("div",{class:"lv-person lv-wait"},h("span"),h("div",null,h("b",null,p.name),h("div",{class:"st"},"In the lobby")),h("div",{class:"acts2"},h("button",{type:"button",class:"go",onclick:()=>admit(p).catch(e=>HOST.notify&&HOST.notify("Couldn’t admit "+p.name+": "+e.message,"error"))},"Let in"),h("button",{type:"button",onclick:()=>decline(p,false)},"Decline")))));
+  const you=h("div",{class:"lv-person"},h("span"),h("div",null,h("b",null,me.name+" (you, host)"),h("div",{class:"meter"},h("i",{"data-meter":"host"}))),h("span",{class:"st"},hostMuted?"muted":"live"));
+  box.append(you);
+  [...peers.values()].filter(p=>p.state!=="lobby").forEach(p=>box.append(h("div",{class:"lv-person","data-gid":p.gid},h("span"),h("div",null,h("b",null,p.name),h("div",{class:"st"},p.state==="connected"?(p.mutedByHost?"muted by you":p.selfMuted?"muted themselves":"connected"):"connecting…"),h("div",{class:"meter"},h("i",{"data-meter":p.gid}))),
+    h("div",{class:"acts2"},h("button",{type:"button",onclick:()=>{p.mutedByHost=!p.mutedByHost;applyGains();sendTo(p,{t:"mute",muted:p.mutedByHost});renderPeople();sendRoster()}},p.mutedByHost?"Unmute":"Mute"),h("button",{type:"button",class:"danger",onclick:()=>decline(p,true)},"Remove")))));
 }
+const renderStatus=()=>{const n=connectedPeers().length;$("lvStatus").textContent=n?n+" guest"+(n===1?"":"s")+" connected":"no guests connected yet"};
+
+/* ---------- state shared with everyone ---------- */
+const elapsed=()=>acc+(recState==="rec"?(performance.now()-t0)/1000:0);
+const remainingMs=()=>timer.state==="run"?Math.max(0,timer.endsAt-Date.now()):timer.remaining;
+const stateMsg=()=>({t:"state",rec:recState,elapsed:elapsed(),question:shownQ,timer:timer.state==="idle"?null:{state:timer.state,remaining:remainingMs()},notice:null,intro:introPlaying,title:room?room.title:""});
+function pushState(){
+  broadcast(stateMsg());clearTimeout(pubTimer); // the API copy lets a guest whose data channel isn't up yet see the same thing
+  pubTimer=setTimeout(()=>room&&api({action:"room-update",code:room.code,pub:{recording:recState,question:shownQ,timer:timer.state==="idle"?null:{state:timer.state,remaining:remainingMs()}}}).catch(()=>{}),300);
+}
+setInterval(()=>{
+  const live=recState==="rec";$("lvClock").textContent=clockS(elapsed());
+  const o=$("lvOnAir");o.className="lv-onair"+(introPlaying?" intro":recState==="rec"?" rec":recState==="paused"?" paused":"");$("lvOnAirText").textContent=introPlaying?"Intro playing":recState==="rec"?"On air":recState==="paused"?"Paused":"Standby";
+  const ts=$("lvTimerShow");ts.textContent=timer.state==="idle"?"":clockS(remainingMs()/1000)+(timer.state==="pause"?" (paused)":"");
+  if(timer.state==="run"&&remainingMs()<=0){timer={state:"idle",remaining:0,endsAt:0};pushState();renderTimerButtons()}
+  if(live&&room)broadcast(stateMsg());
+},1000);
+
+/* ---------- recording ---------- */
+function recStart(){
+  if(recState!=="idle"||!ctx)return;
+  if(introPlaying){HOST.notify&&HOST.notify("Wait for the intro to finish before recording.","error");return}
+  const mt=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(m=>MediaRecorder.isTypeSupported(m))||"";
+  recorder=new MediaRecorder(recDest.stream,{...(mt?{mimeType:mt}:{}),audioBitsPerSecond:64000});chunks=[];markers=[];acc=0;finished=null;$("lvDone").hidden=true;
+  recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);recorder.start(1000);t0=performance.now();recState="rec";recButtons();pushState();
+  if(shownQ)markers.push({t:0,title:"Q: "+shownQ.text.slice(0,70)});
+}
+function recPause(){
+  if(recState==="rec"){acc=elapsed();recorder.pause();recState="paused"}else if(recState==="paused"){t0=performance.now();recorder.resume();recState="rec"}else return;
+  recButtons();pushState();
+}
+function recStop(){
+  if(recState==="idle")return;acc=elapsed();const dur=acc,type=recorder.mimeType||"audio/webm";
+  recorder.onstop=()=>{finished={blob:new Blob(chunks,{type}),chapters:markers.slice(),duration:dur};$("lvDone").hidden=false;$("lvDoneInfo").textContent=clockS(dur)+" · "+(finished.blob.size/1048576).toFixed(1)+" MB"+(markers.length?" · "+markers.length+" chapter marker"+(markers.length===1?"":"s"):"")};
+  if(recorder.state!=="inactive")recorder.stop();recState="idle";recButtons();pushState();
+}
+function recButtons(){$("lvRec").disabled=recState!=="idle";$("lvPause").disabled=recState==="idle";$("lvPause").textContent=recState==="paused"?"Resume":"Pause";$("lvStop").disabled=recState==="idle";$("lvMark").disabled=recState==="idle"}
+$("lvRec").onclick=recStart;$("lvPause").onclick=recPause;$("lvStop").onclick=recStop;
+$("lvMark").onclick=()=>{markers.push({t:elapsed(),title:"Marker "+(markers.length+1)});HOST.notify&&HOST.notify("Marker added at "+clockS(elapsed()),"success")};
+$("lvSend").onclick=()=>{if(!finished)return;HOST.pendingRecording={blob:finished.blob,chapters:finished.chapters,title:room?room.title:"",source:"live"};location.hash="#record?live=1"};
+$("lvDiscard").onclick=async()=>{if(await HOST.confirm("Discard this recording? It can’t be recovered.","Discard")){finished=null;$("lvDone").hidden=true}};
+
+/* ---------- countdown timer ---------- */
+function renderTimerButtons(){$("lvTimerGo").textContent=timer.state==="run"?"Restart":"Start";$("lvTimerPause").disabled=timer.state==="idle";$("lvTimerPause").textContent=timer.state==="pause"?"Resume":"Pause"}
+$("lvTimerGo").onclick=()=>{const m=Math.max(1,Math.min(180,+$("lvTimerMin").value||5));timer={state:"run",remaining:m*60000,endsAt:Date.now()+m*60000};renderTimerButtons();pushState()};
+$("lvTimerPause").onclick=()=>{if(timer.state==="run"){timer={state:"pause",remaining:remainingMs(),endsAt:0}}else if(timer.state==="pause"){timer={state:"run",remaining:timer.remaining,endsAt:Date.now()+timer.remaining}}renderTimerButtons();pushState()};
+$("lvTimerReset").onclick=()=>{timer={state:"idle",remaining:0,endsAt:0};renderTimerButtons();pushState()};
+
+/* ---------- on-screen questions ---------- */
+function showQ(q){shownQ=q?{id:q.id,text:q.text}:null;if(q&&recState!=="idle")markers.push({t:elapsed(),title:"Q: "+q.text.slice(0,70)});renderQuestions();pushState()}
+function renderQuestions(){
+  const box=$("lvQList");box.replaceChildren();
+  questions.forEach((q,i)=>box.append(h("div",{class:"lv-qitem"+(shownQ&&shownQ.id===q.id?" on":"")},h("span",null,q.text),h("div",{class:"acts2"},
+    h("button",{type:"button",onclick:()=>{qNext=i+1;showQ(shownQ&&shownQ.id===q.id?null:q)}},shownQ&&shownQ.id===q.id?"Hide":"Show"),h("button",{type:"button",class:"danger",onclick:()=>{questions.splice(i,1);saveQs();renderQuestions()},"aria-label":"Remove question"},"×")))));
+  if(!questions.length)box.append(h("p",{class:"fine"},"No questions yet. Add some below, or import them from a script."));
+}
+$("lvQAdd").onclick=()=>{const t=$("lvQNew").value.trim();if(!t)return;questions.push({id:uid(),text:t});$("lvQNew").value="";saveQs();renderQuestions()};
+$("lvQNew").addEventListener("keydown",e=>{if(e.key==="Enter")$("lvQAdd").click()});
+$("lvQNext").onclick=()=>{if(!questions.length)return;if(qNext>=questions.length)qNext=0;showQ(questions[qNext]);qNext++};
+$("lvQHide").onclick=()=>showQ(null);
+async function importScript(id){
+  try{const r=await api({action:"get-script",id}),qs=HOST.parseQuestions(r.script.text);
+    if(!qs.length){HOST.notify&&HOST.notify("That script has no questions (lines starting “Q:”).","error");return}
+    qs.forEach(t=>{if(!questions.some(q=>q.text===t))questions.push({id:uid(),text:t})});saveQs();renderQuestions();HOST.notify&&HOST.notify("Imported "+qs.length+" question"+(qs.length===1?"":"s")+" from “"+r.script.title+"”.","success")}
+  catch(e){HOST.notify&&HOST.notify("Couldn’t import: "+e.message,"error")}
+}
+$("lvQScript").onchange=()=>{const v=$("lvQScript").value;$("lvQScript").value="";if(v)importScript(v)};
+if(F.hostScripts!==false)api({action:"list-scripts"}).then(r=>r.scripts.forEach(s=>$("lvQScript").append(new Option(s.title,s.id)))).catch(()=>{});
+
+/* ---------- sound effects and the intro ---------- */
+const sfxNode=()=>sources.sfx.input;
+function tone(freq,type,dur,gain,when=0,end){const t=ctx.currentTime+when,o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(freq,t);if(end)o.frequency.linearRampToValueAtTime(end,t+dur);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(gain,t+.02);g.gain.exponentialRampToValueAtTime(.0001,t+dur);o.connect(g);g.connect(sfxNode());o.start(t);o.stop(t+dur+.05)}
+function noise(dur,gain,freq,when=0,sweepTo){
+  if(!noiseBuf){noiseBuf=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}
+  const t=ctx.currentTime+when,s=ctx.createBufferSource(),f=ctx.createBiquadFilter(),g=ctx.createGain();s.buffer=noiseBuf;f.type="bandpass";f.frequency.setValueAtTime(freq,t);if(sweepTo)f.frequency.exponentialRampToValueAtTime(sweepTo,t+dur);
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(gain,t+Math.min(.03,dur/3));g.gain.exponentialRampToValueAtTime(.0001,t+dur);s.connect(f);f.connect(g);g.connect(sfxNode());s.start(t,Math.random());s.stop(t+dur+.05);
+}
+const SFX=[["Ding",()=>{tone(880,"sine",1.4,.5);tone(1760,"sine",.9,.2)}],["Buzzer",()=>tone(140,"square",.8,.3)],
+  ["Applause",()=>{for(let i=0;i<70;i++)noise(.12,.25*Math.random()+.05,1800+Math.random()*2500,Math.random()*3)}],
+  ["Drum roll",()=>{for(let i=0;i<44;i++)noise(.07,.18+i*.006,200+Math.random()*100,i*.05)}],
+  ["Air horn",()=>[440,554,659].forEach(f=>tone(f,"sawtooth",1.2,.17))],
+  ["Sad trombone",()=>{tone(311,"sawtooth",.5,.22,0);tone(294,"sawtooth",.5,.22,.5);tone(277,"sawtooth",.5,.22,1);tone(262,"sawtooth",1.4,.22,1.5,196)}],
+  ["Whoosh",()=>noise(1,.5,300,0,4000)],["Rimshot",()=>{noise(.12,.5,1200);noise(.12,.5,2000,.18);tone(900,"triangle",.4,.3,.36)}]];
+const customSfx=[];
+function renderSfx(){
+  const box=$("lvSfx");box.replaceChildren();
+  SFX.forEach(([name,fn])=>box.append(h("button",{type:"button",disabled:introPlaying||!ctx,onclick:()=>{if(!introPlaying&&ctx)fn()}},name)));
+  customSfx.forEach(c=>box.append(h("button",{type:"button",disabled:introPlaying||!ctx,onclick:()=>{if(introPlaying)return;const s=ctx.createBufferSource();s.buffer=c.buf;s.connect(sfxNode());s.start()}},c.name)));
+  $("lvIntro").disabled=introPlaying||!ctx;
+}
+$("lvSfxFile").onchange=async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f||!ctx)return;
+  try{if(f.size>8e6)throw new Error("keep sound effects under 8 MB");const buf=await ctx.decodeAudioData(await f.arrayBuffer());if(buf.duration>45)throw new Error("keep sound effects under 45 seconds");customSfx.push({name:f.name.replace(/\.[^.]+$/,"").slice(0,18),buf});renderSfx()}
+  catch(x){HOST.notify&&HOST.notify("Couldn’t add that sound: "+x.message,"error")}
+};
+async function playIntro(){
+  if(introPlaying||!ctx)return;
+  if(recState!=="idle"){HOST.notify&&HOST.notify("Stop the recording first. The intro isn’t recorded, so it would leave a silent gap.","error");return}
+  try{
+    if(!introBuf){const res=await fetch(F.introUrl||"/assets/intro.mp3",{cache:"force-cache"});if(!res.ok)throw new Error("the intro file wasn’t found");introBuf=await ctx.decodeAudioData(await res.arrayBuffer())}
+    introPlaying=true;applyGains();pushState();renderSfx();
+    const s=ctx.createBufferSource();s.buffer=introBuf;s.connect(sources.intro.input);s.onended=()=>{introPlaying=false;applyGains();pushState();renderSfx()};s.start();
+  }catch(e){introPlaying=false;applyGains();renderSfx();HOST.notify&&HOST.notify("Couldn’t play the intro: "+e.message,"error")}
+}
+$("lvIntro").onclick=playIntro;
+
+/* ---------- chat ---------- */
+function postChat(from,text){
+  const m={t:"chat",id:uid(),from,text,at:Date.now()},log=$("lvLog");
+  log.append(h("p",null,h("b",null,from+": "),text));log.scrollTop=log.scrollHeight;broadcast(m);
+}
+const sendChat=()=>{const v=$("lvMsg").value.trim();if(!v||!room)return;$("lvMsg").value="";postChat(me.name,v)};
+$("lvSendMsg").onclick=sendChat;$("lvMsg").addEventListener("keydown",e=>{if(e.key==="Enter")sendChat()});
+
+/* ---------- room lifecycle ---------- */
+$("lvMyMute").onclick=()=>{hostMuted=!hostMuted;applyGains();$("lvMyMute").textContent=hostMuted?"Unmute my mic":"Mute my mic";renderPeople();sendRoster()};
+$("lvMonitor").onchange=()=>{Object.values(sources).forEach(s=>{if(s.id!=="host"&&s.id!=="sfx"&&s.id!=="intro")s.mon=$("lvMonitor").checked});rewire()};
+$("lvCopy").onclick=async()=>{try{await navigator.clipboard.writeText($("lvLink").value);HOST.notify&&HOST.notify("Invite link copied.","success")}catch(e){$("lvLink").select()}};
 $("lvCreate").onclick=async()=>{
-  const btn=$("lvCreate");btn.disabled=true;status("Starting the live room…");
+  $("lvCreate").disabled=true;msg("Opening your microphone…");
   try{
-    const data=await liveApi({action:"create",title:$("lvTitle").value.trim(),by:HOST.who()});
-    roomId=data.room.id;since=0;ended=false;peers=[];recBlob=null;chunks=[];seenEvents.clear();peerConns.forEach(entry=>{try{entry.pc&&entry.pc.close()}catch(e){}});peerConns.clear();
-    $("lvLink").value=location.origin+data.guestPath;$("lvInvite").hidden=false;
-    $("lvChatLog").replaceChildren();$("lvQuestion").value="";
-    controls(true);renderPeers();status("Live room ready. Share the guest link, then start recording.");
-    try{await ensureMic();status("Mic ready. Share the guest link, then start recording.")}
-    catch(e){note("Microphone unavailable: "+e.message+". Guests can still join chat, but there will be no host audio.",true)}
-    clearInterval(pollTimer);pollTimer=setInterval(poll,1500);poll();
-  }catch(e){status("Couldn’t start the room: "+e.message)}
-  finally{btn.disabled=false}
+    await startEngine();msg("Creating the room…");
+    const r=await api({action:"room-create",title:$("lvTitle").value.trim()});
+    room={code:r.code,title:r.room.title};$("lvCode").textContent=r.code;$("lvLink").value=location.origin+"/join/#"+r.code;
+    $("lvSetup").hidden=true;$("lvRoom").hidden=false;$("lvEnd").hidden=false;recButtons();renderPeople();renderQuestions();renderSfx();renderStatus();renderTimerButtons();pollRoom();
+  }catch(e){msg("Couldn’t start: "+(e&&e.name==="NotAllowedError"?"allow microphone access for this page and try again.":e.message));if(ctx){try{ctx.close()}catch(x){}ctx=null}$("lvCreate").disabled=false}
 };
-$("lvCopy").onclick=async()=>{
-  try{await navigator.clipboard.writeText($("lvLink").value);status("Guest link copied.")}
-  catch(e){$("lvLink").select();status("Select and copy the highlighted link.")}
-};
+function closeRoomUi(text){
+  clearTimeout(pollTimer);peers.forEach(p=>{try{p.pc&&p.pc.close()}catch(e){}});peers.clear();
+  if(micStream)micStream.getTracks().forEach(t=>t.stop());if(ctx){try{ctx.close()}catch(e){}}
+  ctx=null;micStream=null;sources={};room=null;dismissed.clear();$("lvRoom").hidden=true;$("lvEnd").hidden=true;$("lvSetup").hidden=false;$("lvCreate").disabled=false;msg(text||"");
+}
 $("lvEnd").onclick=async()=>{
-  if(!roomId||ended)return;
-  if(!await HOST.confirm("End this live room? Guests will be disconnected immediately. Your recording stays here.","End live room"))return;
-  try{await liveApi({action:"end",room:roomId});finishRoom(false);HOST.notify("Live room ended.")}
-  catch(e){status("Couldn’t end the room: "+e.message)}
+  if(!(await HOST.confirm("End the room? Guests will be disconnected."+(recState!=="idle"?" The recording in progress will be lost unless you stop it first.":""),"End room")))return;
+  if(recState!=="idle")recStop();broadcast({t:"kick"});
+  try{await api({action:"room-end",code:room.code})}catch(e){}
+  const keep=finished;closeRoomUi("Room ended."+(keep?" Your recording is still waiting below.":""));if(keep){$("lvSetup").hidden=false;$("lvDone").hidden=false}
 };
-$("lvRecord").onclick=async()=>{
-  if(!roomId||recording)return;
-  try{
-    await ensureMic();
-    if(!window.MediaRecorder)throw new Error("This browser can’t record audio.");
-    const types=["audio/webm;codecs=opus","audio/mp4","audio/webm"],mt=types.find(m=>window.MediaRecorder.isTypeSupported(m))||"";
-    recorder=new MediaRecorder(mixDest.stream,{...(mt?{mimeType:mt}:{}),audioBitsPerSecond:96000});
-    chunks=[];recBlob=null;
-    recorder.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
-    recorder.onstop=()=>{
-      recBlob=new Blob(chunks,{type:(recorder&&recorder.mimeType)||"audio/webm"});
-      $("lvDownload").disabled=!recBlob;$("lvSend").disabled=!recBlob;
-      $("lvRecStatus").textContent="Recording ready ("+(recBlob.size/1048576).toFixed(1)+" MB).";
-    };
-    recorder.start(1000);recording=true;paused=false;accum=0;recStart=Date.now();
-    $("lvRecord").disabled=true;$("lvPause").disabled=false;$("lvStop").disabled=false;
-    $("lvOnair").className="lv-onair live";$("lvOnairText").textContent="Recording";
-    $("lvRecStatus").textContent="Recording…";
-    liveApi({action:"control",room:roomId,state:"recording"}).catch(()=>{});
-  }catch(e){status("Couldn’t start recording: "+e.message)}
-};
-$("lvPause").onclick=()=>{
-  if(!recording||!recorder)return;
-  if(!paused){accum+=Date.now()-recStart;recorder.pause();paused=true;$("lvPause").textContent="Resume";$("lvOnair").className="lv-onair paused";$("lvOnairText").textContent="Paused";liveApi({action:"control",room:roomId,state:"paused"}).catch(()=>{})}
-  else{recStart=Date.now();recorder.resume();paused=false;$("lvPause").textContent="Pause";$("lvOnair").className="lv-onair live";$("lvOnairText").textContent="Recording";liveApi({action:"control",room:roomId,state:"recording"}).catch(()=>{})}
-};
-$("lvStop").onclick=()=>{
-  if(!recording||!recorder)return;
-  accum+=paused?0:Date.now()-recStart;recording=false;paused=false;
-  if(recorder.state!=="inactive")recorder.stop();
-  $("lvRecord").disabled=false;$("lvPause").disabled=true;$("lvStop").disabled=true;$("lvPause").textContent="Pause";
-  $("lvOnair").className="lv-onair";$("lvOnairText").textContent="Standby";
-  liveApi({action:"control",room:roomId,state:"stopped"}).catch(()=>{});
-};
-$("lvDownload").onclick=()=>{
-  if(!recBlob)return;const a=document.createElement("a");a.href=URL.createObjectURL(recBlob);a.download="live-episode."+((recBlob.type||"").includes("mp4")?"m4a":"webm");a.click();setTimeout(()=>URL.revokeObjectURL(a.href),30000);
-};
-$("lvSend").onclick=async()=>{
-  if(!recBlob)return;
-  try{await window.LiveStore.save(recBlob);HOST.notify("Live recording ready in the Record editor.");location.hash="#record"}
-  catch(e){status("Couldn’t send the recording: "+e.message)}
-};
-function tone(freq,duration,peak,type,delay){
-  const t=ctx.currentTime+(delay||0),osc=ctx.createOscillator(),gain=ctx.createGain();
-  osc.type=type||"sine";osc.frequency.setValueAtTime(freq,t);
-  gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(peak,t+.015);
-  gain.gain.exponentialRampToValueAtTime(.0001,t+duration);
-  osc.connect(gain);gain.connect(mixDest);osc.start(t);osc.stop(t+duration+.05);
-}
-function noise(duration,peak,frequency,delay,sweep){
-  const t=ctx.currentTime+(delay||0),rate=ctx.sampleRate,n=Math.max(1,Math.floor(rate*duration));
-  const buf=ctx.createBuffer(1,n,rate),data=buf.getChannelData(0);
-  for(let i=0;i<n;i++)data[i]=Math.random()*2-1;
-  const src=ctx.createBufferSource();src.buffer=buf;
-  const filter=ctx.createBiquadFilter();filter.type="bandpass";filter.frequency.setValueAtTime(frequency,t);
-  if(sweep)filter.frequency.exponentialRampToValueAtTime(sweep,t+duration);
-  filter.Q.value=.8;
-  const gain=ctx.createGain();gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(peak,t+Math.min(.05,duration/3));
-  gain.gain.exponentialRampToValueAtTime(.0001,t+duration);
-  src.connect(filter);filter.connect(gain);gain.connect(mixDest);src.start(t);src.stop(t+duration+.02);
-}
-async function playSfx(name){
-  try{await ensureMic();await ctx.resume()}catch(e){return}
-  if(name==="ding"){tone(880,.55,.3,"sine");tone(1320,.4,.12,"sine",.02)}
-  else if(name==="bell"){[523,659,784,1046].forEach((f,i)=>tone(f,1.1,.16,"sine",i*.06))}
-  else if(name==="whoosh"){noise(.9,.22,350,0,3000)}
-  else if(name==="applause"){for(let i=0;i<14;i++)noise(.12,.05+Math.random()*.05,1200+Math.random()*2200,i*.075)}
-  else if(name==="drumroll"){for(let i=0;i<18;i++)noise(.055,.13,180,i*.055)}
-}
-document.querySelectorAll(".lv-sfx button").forEach(btn=>btn.onclick=async()=>{
-  const sfx=btn.dataset.sfx;await playSfx(sfx);
-  try{await liveApi({action:"sfx",room:roomId,sfx})}catch(e){status("Couldn’t send the sound effect: "+e.message)}
-});
-$("lvShowQuestion").onclick=async()=>{
-  try{await liveApi({action:"question",room:roomId,text:$("lvQuestion").value.trim()});status("Question shown to guests.")}
-  catch(e){status("Couldn’t show the question: "+e.message)}
-};
-$("lvClearQuestion").onclick=async()=>{
-  $("lvQuestion").value="";
-  try{await liveApi({action:"question",room:roomId,text:""});status("On-screen text cleared.")}
-  catch(e){status("Couldn’t clear the screen: "+e.message)}
-};
-$("lvSendChat").onclick=async()=>{
-  const input=$("lvChat"),text=input.value.trim();if(!text)return;
-  input.value="";
-  try{await liveApi({action:"chat",room:roomId,from:HOST_TOKEN,text})}catch(e){note("Couldn’t send chat: "+e.message,true)}
-};
-$("lvChat").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("lvSendChat").click()}});
-async function setTimer(running,seconds){
-  try{await liveApi({action:"timer",room:roomId,running,seconds})}catch(e){status("Couldn’t update the timer: "+e.message)}
-}
-$("lvTimerStart").onclick=()=>{timerRunning=true;timerBase=Date.now();setTimer(true,Math.floor(timerElapsed()))};
-$("lvTimerPause").onclick=()=>{timerSeconds=timerElapsed();timerRunning=false;setTimer(false,Math.floor(timerSeconds))};
-$("lvTimerReset").onclick=()=>{timerRunning=false;timerSeconds=0;timerBase=Date.now();setTimer(false,0)};
-window.addEventListener("pagehide",()=>{clearInterval(pollTimer);if(localStream)localStream.getTracks().forEach(t=>t.stop());if(ctx)ctx.close().catch(()=>{})});
+window.addEventListener("beforeunload",e=>{if(room&&(recState!=="idle"||connectedPeers().length)){e.preventDefault();e.returnValue=""}});
+window.AALive={matrix:()=>{const m={rec:[],mon:[]};Object.values(sources).forEach(s=>{if(s.rec)m.rec.push(s.id);if(s.mon)m.mon.push(s.id)});peers.forEach(p=>{m["to:"+p.gid]=Object.values(sources).filter(s=>s.guests&&s.id!==p.gid).map(s=>s.id)});return m},
+  levels:()=>Object.fromEntries(Object.values(sources).map(s=>[s.id,s.level])),gains:()=>Object.fromEntries(Object.values(sources).map(s=>[s.id,s.out.gain.value])),
+  state:()=>({room,recState,introPlaying,shownQ,timer:timer.state,markers,peers:[...peers.values()].map(p=>({gid:p.gid,name:p.name,state:p.state,mutedByHost:p.mutedByHost}))}),finished:()=>finished,
+  stats:async()=>{const out={};for(const p of peers.values()){if(!p.pc)continue;const r=await p.pc.getStats();r.forEach(s=>{if(s.type==="inbound-rtp"&&s.kind==="audio")out[p.gid]={bytes:s.bytesReceived,packets:s.packetsReceived}})}return out}};
+
+/* ---------- routes: #live?script=ID imports that script's questions ---------- */
+const fromQuery=q=>{const p=new URLSearchParams(q||"");if(p.get("script"))importScript(p.get("script"))};
+fromQuery(location.hash.split("?")[1]);window.addEventListener("host-route-query",e=>{if(e.detail.view==="live")fromQuery(e.detail.query)});
+renderQuestions();renderSfx();
 });
